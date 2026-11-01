@@ -13,7 +13,7 @@ traffic changes mid-leg or rerouting; those are separate concerns.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -48,8 +48,27 @@ class VehicleRun:
     finished: bool = False
 
     @property
+    def leg_fraction(self) -> float:
+        if self.leg_index >= len(self.plan.legs):
+            return 1.0
+        leg = self.plan.legs[self.leg_index]
+        if leg.travel_time_s <= 0:
+            return 1.0
+        return max(0.0, min(1.0, self.leg_elapsed_s / leg.travel_time_s))
+
+    @property
+    def completed_path(self) -> list[tuple[float, float]]:
+        """Finished legs plus the part of the current leg already driven."""
+        coords = list(self.completed_coords)
+        if self.current_coords and self.status in {"to_scene", "to_hospital"}:
+            coords.append(self.position)
+        return coords
+
+    @property
     def remaining_coords(self) -> list[tuple[float, float]]:
-        coords = list(self.current_coords)
+        if self.finished or not self.current_coords:
+            return []
+        coords = _trim_coords(self.current_coords, self.leg_fraction)
         for leg in self.plan.legs[self.leg_index + 1 :]:
             if coords and leg.coords and coords[-1] == leg.coords[0]:
                 coords.extend(leg.coords[1:])
@@ -74,15 +93,22 @@ class SimulationEngine:
 
     def __post_init__(self) -> None:
         self.now = self.start
+        self.patients.clear()
+        self.runs.clear()
+        self.events.clear()
         for incident in self.prepared.scenario.incidents:
             self.patients[incident.id] = Patient(
                 id=incident.id,
                 incident_id=incident.id,
-                hospital_id=incident.id,
+                hospital_id="",
                 severity=incident.severity,
             )
+        grouped: dict[str, list[RoutePlan]] = {}
         for plan in self.plans:
-            vehicle = self.prepared.scenario.vehicle(plan.vehicle_id)
+            grouped.setdefault(plan.vehicle_id, []).append(plan)
+        for vehicle_id, group in grouped.items():
+            vehicle = self.prepared.scenario.vehicle(vehicle_id)
+            plan = group[0] if len(group) == 1 else _merge_plans(group)
             run = VehicleRun(
                 vehicle=vehicle,
                 plan=plan,
@@ -109,9 +135,11 @@ class SimulationEngine:
 
     def _advance(self, run: VehicleRun, dt_s: float) -> None:
         remaining = dt_s
-        guard = 0
-        while remaining > 1e-9 and not run.finished and guard < 20:
-            guard += 1
+        # Every leg costs at most three transitions (travel, scene, offload),
+        # so this bound lets one large tick finish a whole plan.
+        guard = 3 * len(run.plan.legs) + 4
+        while remaining > 1e-9 and not run.finished and guard > 0:
+            guard -= 1
             if run.status in {"to_scene", "to_hospital"}:
                 leg = run.plan.legs[run.leg_index]
                 needed = max(0.0, leg.travel_time_s - run.leg_elapsed_s)
@@ -199,13 +227,15 @@ class SimulationEngine:
     def _deliver(self, run: VehicleRun) -> None:
         incident_id = run.plan.incident_ids[run.leg_index // 2]
         patient = self.patients.get(incident_id)
-        if incident_id in run.onboard:
-            run.onboard.remove(incident_id)
-        if patient is not None:
-            patient.status = "delivered"
         hospital_id = run.plan.patient_hospitals.get(
             incident_id, run.plan.hospital_id
         )
+        if incident_id not in run.onboard:
+            self._log(f"{run.vehicle.id} reached {hospital_id} without {incident_id}")
+            return
+        run.onboard.remove(incident_id)
+        if patient is not None:
+            patient.status = "delivered"
         self._log(f"{run.vehicle.id} delivered {incident_id} to {hospital_id}")
 
     # --------------------------------------------------------------- output
@@ -237,6 +267,57 @@ class SimulationEngine:
 
     def reset(self) -> None:
         self.__post_init__()
+
+
+def _merge_plans(plans: list[RoutePlan]) -> RoutePlan:
+    """Chain several plans for one vehicle into one sequential run.
+
+    ``dispatch.assign`` can give the same vehicle more than one plan. Chaining
+    their legs keeps every patient in the simulation instead of letting the
+    last plan overwrite the earlier run.
+    """
+    first = plans[0]
+    return replace(
+        first,
+        incident_ids=[incident for plan in plans for incident in plan.incident_ids],
+        legs=[leg for plan in plans for leg in plan.legs],
+        total_transit_s=sum(plan.total_transit_s for plan in plans),
+        offload_min=sum(plan.offload_min for plan in plans),
+        total_mission_min=sum(plan.total_mission_min for plan in plans),
+        equipment_match=all(plan.equipment_match for plan in plans),
+        specialty_match=all(plan.specialty_match for plan in plans),
+        objective_score_s=sum(plan.objective_score_s for plan in plans),
+        patient_hospitals={
+            incident_id: hospital_id
+            for plan in plans
+            for incident_id, hospital_id in plan.patient_hospitals.items()
+        },
+        pruned_edges=max(plan.pruned_edges for plan in plans),
+        notes=[],
+    )
+
+
+def _trim_coords(
+    coords: list[tuple[float, float]], fraction: float
+) -> list[tuple[float, float]]:
+    """Return the not-yet-driven part of a polyline, starting at the vehicle."""
+    if not coords:
+        return []
+    if len(coords) < 2:
+        return list(coords)
+    fraction = max(0.0, min(1.0, fraction))
+    lengths = [_distance_m(a, b) for a, b in zip(coords, coords[1:])]
+    total = sum(lengths)
+    if total <= 0:
+        return [coords[-1]]
+    target = fraction * total
+    travelled = 0.0
+    for index, length in enumerate(lengths):
+        if travelled + length >= target:
+            start = _interpolate(coords, fraction)
+            return [start] + coords[index + 1 :]
+        travelled += length
+    return [coords[-1]]
 
 
 def _interpolate(

@@ -14,6 +14,14 @@ Every record carries a `source` field (`real`, `curated`, or `synthetic`) and,
 where useful, a `notes` field. Do not present simulated values as operational
 data.
 
+## Synthetic traffic and simulation
+
+`src/quantum/traffic.py` holds hand-set weekday/weekend delay profiles plus
+manual per-street and network-wide multipliers. They are **synthetic** and are
+not live traffic feeds. `src/quantum/sim.py` combines those travel times with
+the curated offload minutes and fixed scene times (BLS 4 min, ALS 6 min) to
+animate the demo. Every simulation value is illustrative only.
+
 ## Regenerating the graph
 
 ```bash

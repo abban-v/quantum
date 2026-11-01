@@ -231,6 +231,7 @@ def run_qaoa(
 
     marginals = _marginals(probs, problem.n_qubits)
     order = _repair(marginals, problem.n_stops)
+    repaired_feasibility = _repair_share(probs, problem, order)
 
     opt_order, opt_energy = brute_force(problem)
     ratio = 0.0
@@ -269,7 +270,7 @@ def run_qaoa(
         optimal_energy=opt_energy,
         approximation_ratio=ratio,
         raw_feasibility=raw_feasibility,
-        repaired_feasibility=1.0,
+        repaired_feasibility=repaired_feasibility,
         samples=cfg.qaoa_shots,
         iterations=iterations,
         runtime_s=time.monotonic() - start,
@@ -299,6 +300,25 @@ def _repair(marginals: np.ndarray, m: int) -> list[int]:
     return order
 
 
+def _repair_share(probs: np.ndarray, problem: QuboProblem, target: list[int]) -> float:
+    """Probability mass whose per-sample repair lands on ``target``.
+
+    Repair always returns a valid permutation, so "repair success" is 100% by
+    construction. This instead measures how much of the measured distribution
+    actually supports the order the demo shows.
+    """
+    total = 0.0
+    for index, probability in enumerate(probs):
+        if probability <= 0.0:
+            continue
+        bits = np.array(
+            [(index >> k) & 1 for k in range(problem.n_qubits)], dtype=float
+        )
+        if _repair(bits, problem.n_stops) == target:
+            total += float(probability)
+    return min(1.0, max(0.0, total))
+
+
 def _fallback(
     prepared: PreparedProblem,
     vehicle: Vehicle,
@@ -319,7 +339,7 @@ def _fallback(
         optimal_energy=float("nan"),
         approximation_ratio=0.0,
         raw_feasibility=0.0,
-        repaired_feasibility=1.0,
+        repaired_feasibility=0.0,
         samples=0,
         iterations=0,
         runtime_s=time.monotonic() - start,

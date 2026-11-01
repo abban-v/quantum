@@ -35,27 +35,85 @@ uv run python scripts/prepare_data.py
 
 The graph is cached at `data/cache/manhattan_drive.graphml` (gitignored).
 
-### Basic demo flow (about 30 seconds)
+### Basic demo flow (about 60 seconds)
 
 1. In the sidebar, choose preset **S4 — Multi-casualty collision**.
-2. Click **Dispatch**. The map draws the classical route and the plan table shows transit, offload, total, equipment, specialty, and clearance status.
-3. Click **Run quantum**. A green repaired-QAOA overlay appears with the approximation ratio, raw feasibility, repaired feasibility, and runtime.
-4. Use the layer control (top right) to toggle routes, hospitals, ambulances, and incidents.
+2. Set the **day and time**. Traffic colours on the map use a synthetic weekday/weekend profile, and the same profile changes edge travel times.
+3. Click **Dispatch**. The map draws the classical route and the tables show each patient's hospital, transit, offload, total mission, equipment, specialty, and pruned-edge counts. The live simulation starts automatically.
+4. Click **Run quantum**. A green repaired-QAOA overlay appears with the energy ratio, repair mass, raw feasibility, and runtime.
+5. Watch the ambulances move along their routes, pick patients up, wait for the simulated offload, and deliver each patient to their own hospital. Use **Pause**, **Step**, **Reset**, and the speed slider to inspect the run.
+6. Use the layer control (top right) to toggle the traffic layer, routes, hospitals, ambulances, and incidents. The map keeps the zoom and centre you choose.
 
 ### Click-to-place a custom incident
 
-1. Click anywhere on the map. An orange marker is placed.
+1. Set **Map click** to **Place incident** and click anywhere on the map. An orange marker is placed.
 2. Type a description, for example `snake bite with difficulty breathing`.
 3. Click **Dispatch**.
 4. For a quantum order, tick **Multi-casualty custom (3 patients)** before dispatching. QAOA needs at least two stops.
+
+### Edit traffic
+
+1. Use the **Network delay multiplier** slider to scale the synthetic time-of-day profile across the whole map.
+2. To change one street, either set **Map click** to **Edit traffic** and click it, or choose the street by name in the **Pick a street by name** selector.
+3. Adjust the delay factor and press **Apply override** (map selection) or **Apply to street** (name selection). The next **Dispatch** uses it.
+4. Use **Clear this street**, **Clear street override**, or **Clear all overrides** to return to the time-of-day profile.
+
+### Offline basemap
+
+Choose **Offline vector** in the sidebar to draw the cached OpenStreetMap road graph
+instead of online tiles. The app then needs no network at all, including after the
+graph cache exists.
 
 ### What the demo actually does
 
 - Downloads and caches the Manhattan drive graph from OpenStreetMap.
 - Parses the free-text description with rules. Ollama is optional; the demo works without it.
-- Chooses a hospital classically, assigns a vehicle, and computes road routes.
-- For 2–3 stops, builds a 4–9 qubit QUBO, runs QAOA `p=1` on local Qiskit Aer, repairs the bitstring to a valid stop order, and overlays the result.
-- Uses **simulated** offload waits, severities, and clearance limits. Hospital and station locations are real OSM features.
+- Applies a **synthetic** weekday/weekend, hour-of-day traffic profile to every edge, plus optional network-wide and per-street overrides.
+- Assigns vehicles, picks a hospital per patient, and computes road routes.
+- For 2–3 stops, builds a 4–9 qubit QUBO, runs QAOA `p=1` on local Qiskit Aer, repairs the sampled bitstring to a valid stop order, and overlays the result.
+- Runs a deterministic ambulance simulation with scene time, patient pickup, simulated offload, and per-patient delivery.
+- Uses **simulated** offload waits, severities, traffic, and clearance limits. Hospital and station locations are real OSM features.
+
+
+### Quantum usage in this demo
+
+This is the part that must stay real: the demo genuinely builds and simulates a
+quantum circuit, but only for the small stop-ordering subproblem.
+
+| Stage | What runs | Where |
+|---|---|---|
+| Decision variables | `x[i, t]` one-hot stop/position bits for one vehicle, `m²` qubits for `m` stops (4–9 qubits in the presets) | `src/quantum/qubo.py` |
+| Objective | Road travel time with the selected traffic profile, urgency delay `60 s × severity × position`, per-patient hospital detour and offload | `src/quantum/qubo.py` |
+| Constraints | One stop per position and one position per stop, plus the demo's `max_quantum_stops² <= max_qubits` guard | `src/quantum/qubo.py` |
+| Circuit | QAOA `p=1`, Hadamard mixer, `RZ`/`RZZ` cost layers, `RX` mixer | `src/quantum/qaoa_solver.py` |
+| Execution | Exact statevector on local Qiskit Aer; COBYLA optimises `(γ, β)` | `src/quantum/qaoa_solver.py` |
+| Decoding | Hungarian repair of the measured marginals to a valid permutation, then the classical route builder computes the physical route | `src/quantum/qaoa_solver.py` |
+| Comparison | Classical order vs repaired quantum order, exact brute-force QUBO optimum for the energy ratio | `src/quantum/qaoa_solver.py` |
+
+Honest boundaries:
+
+- **No quantum hardware and no cloud.** Everything is local statevector simulation.
+- **No live traffic, no live ED offload, no real clearance data.** Those are synthetic demo values and are labelled as such in the UI and data files.
+- **No asynchronous background solve.** QAOA runs synchronously behind a spinner in a large-stack thread. A run typically takes well under a second to a few seconds.
+- **No 16-qubit claim.** The shipped guard is `max_quantum_stops=3` and `max_qubits=12`; presets use 4–9 qubits.
+- **Classical work stays classical.** Graph pruning, snapping, hospital selection, and route timing are classical by design.
+
+### Implementation status
+
+| Area | Status |
+|---|---|
+| OSM graph download/cache, snapping, clearance pruning | Implemented |
+| Rule-based triage parser, optional local Ollama fallback | Implemented |
+| Per-patient hospital choice and multi-stop routing | Implemented |
+| Synthetic day/time traffic plus manual street overrides | Implemented |
+| QUBO + QAOA statevector + bitstring repair | Implemented |
+| Interactive map, click-to-place, traffic editor, offline vector basemap | Implemented |
+| Ambulance simulation with pickup/offload/delivery | Implemented |
+| Live traffic or live ED offload feeds | Not implemented (synthetic only) |
+| Quantum hardware execution or error mitigation | Not implemented |
+| Dynamic en-route rerouting during the simulation | Not implemented |
+| 2-Opt / simulated-annealing benchmark suite | Not implemented |
+| Jupyter benchmark notebook | Not implemented |
 
 ### Useful commands
 
@@ -86,7 +144,7 @@ Conversations with frontline paramedics (on *r/ems*) and 911 dispatchers (*r/911
 
 Rather than existing as an abstract math model, this project delivers an **interactive browser-based emergency command dashboard**:
 
-1. **Interactive Real-World Map:** A live, dynamic city map (rendered in the browser) displaying road networks, active traffic congestion, low overpasses, weight-restricted bridges, candidate regional hospitals with real-time emergency department (ED) offload queues, and geographically stationed ambulances (Basic Life Support / BLS, and Advanced Life Support / ALS Mobile ICUs equipped with mechanical ventilators).
+1. **Interactive Real-World Map:** A dynamic city map (rendered in the browser) displaying road networks, synthetic time-of-day traffic congestion, low overpasses, weight-restricted bridges, candidate regional hospitals with **simulated** emergency department (ED) offload queues, and geographically stationed ambulances (Basic Life Support / BLS, and Advanced Life Support / ALS Mobile ICUs equipped with mechanical ventilators).
 2. **Click-to-Incident Dispatch:** The operator clicks any location on the map to place an active incident marker.
 3. **Natural Language Emergency Specification ("In Text"):** The user specifies the emergency in plain text. Examples:
    - *"Apartment building fire victim, severe smoke inhalation with acute respiratory distress, cyanotic."*
@@ -96,10 +154,10 @@ Rather than existing as an abstract math model, this project delivers an **inter
 4. **Automated Requirement & Triage Extraction:** The system automatically analyzes the text prompt and extracts the underlying mathematical parameters:
    - **Triage Urgency Score ($\lambda_i$):** (e.g., Critical $\lambda = 50$ for respiratory arrest/snake bite vs. Low $\lambda = 1$ for fever).
    - **Clinical Equipment Demand ($E_i$):** (Ventilator/ALS unit required vs. standard stretcher/BLS transport).
-   - **Destination Hospital Specialty Selection:** (Burn Center for fire victims, Comprehensive Stroke Center, Level 1 Trauma for head injuries, factoring live ER offload wait times).
+   - **Destination Hospital Specialty Selection:** (Burn Center for fire victims, Comprehensive Stroke Center, Level 1 Trauma for head injuries, factoring simulated ED offload wait times).
    - **Rig Physical Clearance:** (Filtering low overpasses and bridge weight limits for heavy Mobile ICU rigs).
-5. **Local Quantum Circuit Execution via Qiskit & Qiskit Aer:** The routing problem is compiled into an Ising Hamiltonian and solved entirely on your local machine using Qiskit and Qiskit Aer (utilizing statevector and shot-based `AerSimulator` with optional hardware-realistic noise models), driving the classical-quantum hybrid loop (COBYLA/SLSQP) with zero cloud dependencies or external API keys.
-6. **Live Route Animation:** The user watches the dispatched ambulances dynamically mobilize and animate along their computed optimal routes on the interactive map in real time.
+5. **Local Quantum Circuit Execution via Qiskit & Qiskit Aer:** The stop-ordering subproblem is compiled into an Ising Hamiltonian and solved entirely on your local machine with Qiskit Aer **statevector** simulation, driving the classical-quantum hybrid loop (COBYLA) with zero cloud dependencies or external API keys. Shot-based noise models and hardware execution are not part of the demo.
+6. **Simulated Route Animation:** Dispatching starts a deterministic simulation that moves the dispatched ambulances along their computed routes, picks patients up, waits for the simulated offload, and delivers each patient to their assigned hospital. Pause, step, reset, and speed controls are available.
 
 ---
 
@@ -162,27 +220,27 @@ We address this heterogeneous ambulance routing challenge by formulating it as a
                                 ▼
                  [Classical Preprocessing Layer]
                    ├─ Filter physical road network (prune low overpasses via Dijkstra on OSM)
-                   ├─ Compute dynamic congestion matrix with live traffic
+                   ├─ Compute congestion matrix from the synthetic day/time profile
                    ├─ Perform O(|H|) Hospital Lookup: C_{ih} + T_{offload}(h) - Ω_h
-                   └─ Two-Stage CFRS Decomposition: Partition into ≤ 16-qubit vehicle subproblems
+                   └─ Guard: at most 3 stops (9 qubits) per vehicle subproblem
                                 │
                                 ├─────────────────────────────────────────┐
-                                │ Instant Classical Route (< 0.2s)        │
+                                │ Classical route (immediate)             │
                                 ▼                                         ▼
-            [Live Map Display: Instant Dispatch]        [Local Qiskit Aer QAOA Engine]
-            (Renders immediate 2-Opt/Dijkstra route)      ├─ Exact Statevector (zero shot noise)
-                                                          ├─ Warm-started parameters (< 10 iters)
-                                                          └─ Local COBYLA optimizer loop (γ, β)
+            [Map: Classical Dispatch]                   [Local Qiskit Aer QAOA Engine]
+            (Renders shortest-path route)                 ├─ Exact Statevector (no shot noise)
+                                                          ├─ COBYLA from fixed starts
+                                                          └─ Local optimizer loop (γ, β)
                                                                           │
                                                                           ▼
                                                        [Classical Bitstring Repair Decoder]
-                                                          ├─ Project raw samples to valid tours
-                                                          ├─ Calculate continuous physical schedule
-                                                          └─ Enforce clinical equipment constraints
+                                                          ├─ Project marginals to a valid tour
+                                                          ├─ Recompute the physical schedule
+                                                          └─ Equipment filtered before the QUBO
                                                                           │
                                                                           ▼
-                                                       [Dynamic Map Update & Comparative Metrics]
-                                                       (Overlays quantum route vs. classical baselines)
+                                                       [Map Update & Comparative Metrics]
+                                                       (Overlays quantum route vs. classical)
 ```
 
 ### Key Conceptual Pillars
@@ -190,8 +248,8 @@ We address this heterogeneous ambulance routing challenge by formulating it as a
 1. **Natural Language Emergency Dispatch:**
    Users specify the situation naturally. The NLP extraction layer translates complex clinical and situational prose into concrete mathematical parameters ($\lambda_i$, equipment flags $E_i$, hospital criteria).
 
-2. **Cluster-First, Route-Second (CFRS) Problem Decomposition:**
-   Rather than attempting to encode the entire metropolitan area into a single massive Hamiltonian ($>100$ qubits), classical preprocessing clusters the incident set so that each vehicle's combinatorial routing subproblem is bounded to **$\le 16$ qubits**. This guarantees rapid, exact local statevector simulation on Qiskit Aer with zero memory overflow.
+2. **Bounded Quantum Subproblem:**
+   Rather than attempting to encode the entire metropolitan area into a single massive Hamiltonian, classical preprocessing selects a vehicle and orders at most `max_quantum_stops=3` stops. That gives a 9-qubit one-hot QUBO, well inside the 12-qubit guard, so exact local statevector simulation is fast and memory-safe.
 
 3. **Two-Tier Temporal Decoupling (Sequence Order vs. Continuous Time):**
    The quantum Hamiltonian optimizes the combinatorial **route sequence** (stop 1, stop 2, stop 3). Once the sequence is decoded, the classical graph layer calculates exact continuous physical travel durations ($t = d / v$), speeds, traffic delays, and hospital turnaround times.
@@ -205,10 +263,10 @@ We address this heterogeneous ambulance routing challenge by formulating it as a
    Rig dimensions are enforced upstream during classical preprocessing. Edges with overpass heights lower than rig clearance or bridges below weight capacity are eliminated from the transition matrix, preventing rig entrapment while saving physical qubits.
 
 6. **Medical Equipment Compatibility (ALS / Ventilator Matching):**
-   Patients requiring critical ventilator support are matched only to ambulances possessing active respiratory capabilities, either by hard pre-pruning incompatible vehicle-patient pairs or via quadratic penalty terms in the Hamiltonian.
+   Patients requiring critical ventilator support are matched only to ambulances possessing active respiratory capabilities. Incompatible vehicle-patient pairs are filtered before the QUBO is built; the QUBO itself does not carry an equipment penalty.
 
 7. **Classical Post-Processing Bitstring Repair:**
-   Raw bitstrings sampled from shallow-depth QAOA ($p=1, 2$) are passed through a lightweight greedy repair heuristic, resolving duplicate visits or omitted stops and guaranteeing 100% executable routes.
+   Measured marginals from shallow-depth QAOA are passed through a Hungarian-assignment repair step that projects them onto a valid permutation. Every displayed order is therefore executable, while the raw and repaired probability masses are reported separately so the quantum result is not overstated.
 
 ---
 
@@ -219,12 +277,12 @@ We formulate the heterogeneous ambulance dispatch as a **Quadratic Unconstrained
 ### A. Decision Variables & Sizing
 Let the ambulance fleet be partitioned by capability:
 $$v \in \mathcal{V} = \mathcal{V}_{\text{BLS}} \cup \mathcal{V}_{\text{ALS}}$$
-For ambulance $v \in \mathcal{V}$, let $\mathcal{C}_v$ be the assigned candidate incident set plus depot/hospital endpoints ($|\mathcal{C}_v| \le 4$).
+For ambulance $v \in \mathcal{V}$, let $\mathcal{C}_v$ be the assigned candidate incident set. The shipped guard is $|\mathcal{C}_v| \le 3$ (`max_quantum_stops`).
 For node $i \in \mathcal{C}_v$ and sequence step $t \in \{0, \dots, T_v - 1\}$:
 $$x_{i, t}^{(v)} \in \{0, 1\}$$
 where $x_{i, t}^{(v)} = 1$ if ambulance $v$ visits location $i$ at step $t$, and $0$ otherwise.
 
-* **Subproblem Qubit Footprint:** Clamping fixed ambulance origins at $t=0$ ($x_{\text{depot}, 0}^{(v)} = 1$) restricts subproblems to $|\mathcal{C}_v| \times (T_v - 1) \le 16 \text{ qubits}$, enabling exact local statevector simulation in $< 5 \text{ ms}$ per function evaluation.
+* **Subproblem Qubit Footprint:** The QUBO uses $|\mathcal{C}_v|^2$ bits (9 for 3 stops), inside the demo's `max_qubits=12` guard. That makes exact statevector simulation practical on a laptop.
 
 ---
 
@@ -282,23 +340,29 @@ Designing a quantum-assisted ambulance routing system reveals distinct theoretic
 
 ### Challenge 1: The Exponential Simulation Memory Wall & Qubit Scaling
 * **The Problem:** A monolithic encoding of an urban ambulance fleet across multiple time steps ($|\mathcal{V}| \times (N + |\mathcal{H}|) \times T$) demands $100+$ qubits for even 5 incidents. Simulating $100$ qubits via statevector requires $2^{100} \times 16 \text{ bytes} \approx 2 \times 10^{31} \text{ bytes}$, which is physically impossible. On local machines, `qiskit-aer` statevector simulation crashes with Out-Of-Memory (OOM) beyond 32 qubits.
-* **Our Solution (Two-Stage CFRS Decomposition):** We implement the **Cluster-First, Route-Second (CFRS)** paradigm (*Feld et al., 2019*). Classical clustering first groups incidents into localized sub-clusters matching ambulance capacity and clinical compatibility. Each ambulance subproblem contains $\le 4$ stops, requiring only **$\le 16$ qubits**. A 16-qubit statevector requires only $1 \text{ MB}$ of RAM and executes in $\approx 5\text{ ms}$ per evaluation on Qiskit Aer.
+* **Our Solution (Bounded Subproblem):** Classical preprocessing selects one vehicle's stop set and caps it at `max_quantum_stops=3`. The QUBO is therefore at most 9 qubits, and the code refuses larger subproblems before touching Qiskit. A 9-qubit statevector needs about 8 KB and is fast enough to optimise inside the UI request.
 
-### Challenge 2: Clinical Equipment Matching & Variable Pruning
+### Challenge 2: Clinical Equipment Matching
 * **The Problem:** Adding clinical penalty terms into QUBO for heterogeneous equipment (BLS vs. ALS ventilators) increases Hamiltonian coupling density. In shallow QAOA, soft penalties can still produce bitstrings where an unequipped BLS unit is assigned to a dying respiratory arrest patient.
-* **Our Solution:** Hard **classical variable clamping**: During classical preprocessing, if patient $i$ requires a ventilator ($E_i = 1$) and ambulance $v$ is a BLS unit, all decision variables $x_{i,t}^{(v)}$ are pre-set to $0$ and completely removed from the Hamiltonian before compiling to Qiskit. This guarantees 100% clinical equipment safety while saving precious qubits.
+* **Our Solution:** Equipment compatibility is a **hard classical filter before the QUBO**. Vehicle selection and cluster construction reject any vehicle that cannot carry every patient's required equipment, so the quantum subproblem only ever contains clinically valid assignments. The QUBO does not carry a redundant equipment penalty.
 
 ### Challenge 3: Real-Time UI Latency vs. Hybrid Optimizer Iterations
-* **The Problem:** 911 dispatch requires an immediate response ($< 1 \text{ second}$). A full QAOA optimization loop (COBYLA running 100 iterations of statevector simulations) takes 30–60 seconds, which freezes an interactive browser map.
-* **Our Solution (Dual-Tier Dispatch & Warm-Started Parameter Transfer):**
-  1. **Instant Classical Dispatch (< 0.2s):** When an incident is clicked on the map, a classical heuristic (NetworkX Dijkstra + 2-Opt) immediately animates the initial ambulance route on the browser dashboard.
-  2. **Asynchronous Background Quantum Optimization:** The QAOA loop runs in a non-blocking background thread.
-  3. **QAOA Parameter Transfer (*Brandao et al., 2018*):** For small subgraphs, optimal variational angles $(\gamma^*, \beta^*)$ are concentrated in predictable clusters. Initializing with warm-started pre-computed angles cuts classical optimization iterations down to $< 10$ steps ($< 1.5 \text{ seconds}$).
+* **The Problem:** 911 dispatch requires an immediate response. A full QAOA optimization loop (COBYLA over statevector evaluations) takes seconds, which would freeze an interactive browser map if it blocked the first render.
+* **Our Solution (Dual-Tier Dispatch):**
+  1. **Instant Classical Dispatch:** When the operator presses **Dispatch**, a classical heuristic (NetworkX shortest paths plus permutation search over at most 3 stops) immediately draws the route. This is the default view.
+  2. **Explicit Quantum Comparison:** **Run quantum** is a separate, opt-in action behind a spinner. It runs in a dedicated large-stack thread (`run_with_large_stack`) so Qiskit's circuit construction does not overflow Streamlit's worker stack. It is synchronous, not asynchronous background work.
+  3. **Bounded Subproblems:** The demo never sends more than `max_quantum_stops=3` stops to the QUBO, so statevector simulation stays inside the 12-qubit budget.
 
 ### Challenge 4: The Feasibility Deficit of Shallow QAOA ($p=1, 2$)
-* **The Problem:** In constrained routing problems, valid routes occupy an exponentially tiny fraction of the $2^n$ Hilbert space ($< 10^{-4}$). Unassisted sampling from shallow QAOA ($p=1, 2$) with standard Pauli-$X$ mixers frequently samples invalid bitstrings that violate one-hot or coverage constraints.
+* **The Problem:** In constrained routing problems, valid routes occupy an exponentially tiny fraction of the $2^n$ Hilbert space. Unassisted sampling from shallow QAOA ($p=1, 2$) with standard Pauli-$X$ mixers frequently samples invalid bitstrings that violate one-hot or coverage constraints.
 * **Our Solution (Classical Post-Processing Bitstring Repair):**
-  We implement a classical greedy post-processing decoder in `src/quantum/qaoa_solver.py`. The decoder inspects sampled bitstrings and projects them onto the nearest valid permutation (repairing duplicate visits or unvisited stops). We report both **Raw Quantum Feasibility** ($15\%\text{--}35\%$ on NISQ-depth simulation) and **Post-Repair Route Feasibility** ($100\%$).
+  We implement a classical post-processing decoder in `src/quantum/qaoa_solver.py`. The decoder inspects the measured marginals and projects them onto the nearest valid permutation with a Hungarian assignment. The UI reports:
+  - **Raw feasible:** share of shots that were valid permutations before repair (typically a few percent at $p=1$).
+  - **Repair mass:** share of the measured probability that repairs to the order actually displayed.
+  - **Energy ratio:** exact brute-force QUBO optimum divided by the repaired QAOA energy (1.00 means the repaired order is optimal).
+
+  Repair always returns a valid permutation; that is not the same as saying the quantum distribution supports it, which is why repair mass is reported separately.
+
 
 ### Challenge 5: Allocation of Classical vs. Quantum Computational Boundaries
 * **The Problem:** Naive quantum proposals attempt to encode street-level obstacle avoidance, bridge weight limits, and hospital offload comparisons into the Hamiltonian, needlessly inflating the qubit count.
@@ -308,81 +372,90 @@ Designing a quantum-assisted ambulance routing system reveals distinct theoretic
 
 ---
 
-## 5. What We Plan to Do
+## 5. What Is Implemented vs Planned
 
-- [x] Define real-world ambulance dispatch use cases (ventilator matching, snake bite vs. fever detour, hospital offload wait-times, rig geometry limits).
-- [ ] **Interactive Real-World Map Dashboard (`app.py` & `src/quantum/ui/`):**
-  - Interactive browser map showing live city street network, ambulance stations, and candidate hospitals.
-  - Click-on-map incident placing with pop-up text entry modal.
-  - Dual-tier rendering: Instant classical route animation (< 0.2s) followed by asynchronous quantum overlay.
-- [ ] **Natural Language Incident & Triage Parser (`src/quantum/nlp_parser.py`):**
-  - Converts user plain-text descriptions into mathematical parameters: triage urgency ($\lambda_i$), equipment tags (ventilator/ALS), and hospital specialty tags.
-- [ ] **Ambulance Network & Fleet Generator (`src/quantum/problem.py`):**
-  - City graph with ambulance stations, depots, and candidate hospitals.
-  - Physical road attributes: bridge weight limits, overpass clearances, road closures, and dynamic traffic.
-  - Candidate hospital profiles with live ER offload wait times ($T_{\text{offload}}$) and specialty accreditations (Burn, Trauma, Stroke).
-  - Two-Stage CFRS decomposer partitioning incidents into $\le 16$-qubit subproblems.
-- [ ] **Heterogeneous Ambulance QUBO & Hamiltonian Generator (`src/quantum/qubo.py`):**
-  - Mathematical QUBO matrix builder incorporating urgency, equipment matching, unique incident coverage, and capacity detours.
-  - Converts QUBO to Qiskit `SparsePauliOp` Pauli-$Z$ Hamiltonian.
-- [ ] **Local Qiskit Aer QAOA Solver (`src/quantum/qaoa_solver.py`):**
-  - Parameterized QAOA ansatz with $p$ layers executed via local Qiskit Aer (`AerSimulator` statevector and shot modes).
-  - Warm-started angle initialization and classical optimizer loop (COBYLA/SLSQP).
-  - Classical post-processing bitstring repair decoder projecting raw samples to valid routes.
-- [ ] **Classical Baseline Benchmark (`src/quantum/baselines.py`):**
-  - Uncoordinated Greedy Nearest Neighbor (demonstrating common real-world failures: dumping patients into 3-hour offload queues, routing ambulances into low clearances, dispatching BLS to respiratory arrest).
-  - Classical 2-Opt local search / Simulated Annealing.
-  - Exact Brute-Force solver (for ground truth verification on small subgraphs).
-- [ ] **Evaluation & Visual Analytics (`src/quantum/visualize.py` & `notebooks/emergency_routing.ipynb`):**
-  - Visual 2D map showing road networks, ambulance routes (BLS vs. ALS), bridge/clearance restrictions, hospital offload heatmaps, and detour timelines.
-  - Comparative metrics table (Total Turnaround Time, Offload Delay Saved, Equipment Mismatch Rate, Raw vs. Post-Repair Feasibility, Approximation Ratio).
+- [x] Define real-world ambulance dispatch use cases (ventilator matching, hospital offload waits, rig geometry limits, multi-patient routing).
+- [x] **Interactive Map Dashboard (`app.py`):**
+  - Bounded Folium map with persisted center/zoom, online OSM tiles, and an **offline vector** basemap drawn from the cached graph.
+  - Click-to-place incident markers, with the selected point and preset incidents shown consistently.
+  - Vehicle-shaped ambulance badges, red-plus hospital badges, synthetic traffic layer with a day/time picker, a network multiplier, and both map-click and street-name override editors.
+  - Classical route overlay, repaired-QAOA overlay, and a live simulation layer that starts automatically after Dispatch.
+- [x] **Natural Language Incident & Triage Parser (`src/quantum/nlp_parser.py`):**
+  - Rule-based urgency, equipment, and specialty extraction, with an optional local Ollama fallback.
+- [x] **Ambulance Network & Fleet (`src/quantum/problem.py`, `data/curated/`):**
+  - Real OSM hospital and station coordinates; curated specialty/offload fields; synthetic vehicles and incidents.
+  - Clearance and weight pruning per vehicle.
+  - Per-patient hospital selection and cluster ordering; greedy multi-vehicle assignment for larger scenarios.
+  - The demo does **not** implement a general CFRS partitioner beyond the `max_quantum_stops=3` guard.
+- [x] **Heterogeneous Ambulance QUBO (`src/quantum/qubo.py`):**
+  - One-hot stop/position QUBO with traffic travel times, urgency delay, per-patient hospital detour, and offload.
+  - Ising conversion for the QAOA circuit.
+- [x] **Local Qiskit Aer QAOA (`src/quantum/qaoa_solver.py`):**
+  - QAOA `p=1` on exact statevector, COBYLA angle optimisation, Hungarian bitstring repair, exact brute-force optimum for comparison.
+  - Warm-started angles, SLSQP, shot-noise models, and hardware execution are **not** implemented.
+- [x] **Ambulance Simulation (`src/quantum/sim.py`):**
+  - Deterministic tick engine with scene time, pickup, simulated offload, per-patient delivery, fleet state, and event log.
+  - Dynamic en-route rerouting during a run is **not** implemented.
+- [x] **Classical Baseline:**
+  - Nearest-neighbour ordering plus exhaustive permutation search for clusters of at most 6 stops; greedy assignment across vehicles.
+- [ ] Separate `baselines.py` benchmark suite (2-Opt, simulated annealing, historical-data comparison).
+- [ ] Jupyter benchmark notebook.
 
 ---
 
-## 6. Possible Implementation & Technology Stack
+## 6. Implementation & Technology Stack
 
 ### Tech Stack
 - **Language:** Python 3.12
-- **Interactive Web Interface:** Streamlit, Folium / Streamlit-Folium (real-world OpenStreetMap tiles, interactive click listeners, and animated ambulance path overlays)
-- **Natural Language Parsing:** Rule-based / lightweight NLP parser extracting medical triage urgency and clinical equipment flags
-- **Local Quantum Simulator:** `qiskit-aer>=0.18.2` (High-performance C++ `AerSimulator` with statevector and shot-noise models)
-- **Quantum Core SDK:** `qiskit>=2.6.1`
-- **Classical Optimization:** SciPy (`minimize` with COBYLA/SLSQP), NumPy
-- **Graph & Geospatial Modeling:** NetworkX, Shapely / GeoPandas
-- **Interactive Development:** Jupyter Notebooks
+- **Interactive Web Interface:** Streamlit, Folium / Streamlit-Folium (OSM tiles or offline vector roads, click listeners, animated route overlays)
+- **Natural Language Parsing:** Rule-based parser extracting medical triage urgency and clinical equipment flags
+- **Local Quantum Simulator:** Qiskit Aer statevector simulation
+- **Quantum Core SDK:** Qiskit
+- **Classical Optimization:** SciPy (`minimize` with COBYLA), NumPy
+- **Graph & Geospatial Modeling:** NetworkX, GeoPandas / Shapely
+- **Tests:** pytest, Streamlit AppTest
 
-### Proposed Codebase Architecture
+### Actual Codebase Architecture
 ```text
 quantum/
 ├── pyproject.toml                     # Project dependencies and packaging
 ├── README.md                          # Project documentation & formulation
 ├── app.py                             # Interactive browser application (Streamlit / Web Map)
-├── notebooks/
-│   └── emergency_routing.ipynb        # Interactive end-to-end demonstration
+├── data/curated/                      # Curated + synthetic demo records
+├── scripts/
+│   ├── prepare_data.py                # Graph download/cache and edge export
+│   └── run_scenario.py                # CLI dispatch runner
+├── tests/                             # Unit and AppTest coverage
 └── src/
     └── quantum/
         ├── __init__.py
-        ├── nlp_parser.py              # Text emergency prompt -> mathematical parameters
-        ├── problem.py                 # City network, traffic, rig limits, ER wait times & ambulance fleet
-        ├── qubo.py                    # Ambulance QUBO matrix & Pauli Hamiltonian builder
-        ├── dynamic_dispatcher.py       # En-route detour, hospital selection, equipment matching & CFRS decomposition
-        ├── qaoa_solver.py             # QAOA execution via local Qiskit Aer & bitstring repair decoder
-        ├── baselines.py               # Classical Greedy, 2-Opt, & Exact Brute-Force
-        └── visualize.py               # Interactive map renderers & performance visualizer
+        ├── config.py                  # config.yaml loader
+        ├── data/                      # OSM fetch and curated loaders
+        ├── nlp_parser.py              # Text emergency prompt -> triage parameters
+        ├── problem.py                 # Fleet, incidents, hospitals, scenario models
+        ├── traffic.py                 # Synthetic time-of-day profiles, colours, overrides
+        ├── graph.py                   # Routing graph, clearance pruning, shortest paths
+        ├── dispatch.py                # Per-patient hospital choice, ordering, route plans
+        ├── qubo.py                    # QUBO matrix and Ising coefficients
+        ├── qaoa_solver.py             # QAOA on local Aer, repair decoder, comparison
+        ├── sim.py                     # Ambulance simulation engine
+        ├── visualize.py               # Map, traffic layer, routes, live vehicles
+        └── runtime.py                 # Large-stack thread helper for Qiskit
 ```
 
 ### Evaluation Metrics
-| Metric | Description | Target |
+| Metric | Description | Current demo |
 |---|---|---|
-| **Hospital Turnaround Time** | Total mission time including transit + live ER offload wait time | Minimized (saves 1-3 hrs vs. nearest ER) |
-| **Rig Clearance Violations** | Number of heavy rigs routed through low clearances or weight-limited bridges | Exactly 0 (via classical preprocessing) |
-| **Equipment Mismatch Rate** | Percentage of patients assigned to ambulances lacking required equipment (e.g. ventilator) | Exactly 0% (via pre-clamping / QUBO penalty) |
-| **Raw Quantum Feasibility (%)** | Percentage of raw sampled quantum bitstrings yielding valid routes before repair | $15\%\text{--}35\%$ (realistic for NISQ depth $p=1, 2$) |
-| **Post-Repair Route Feasibility (%)** | Percentage of routes valid after classical greedy bitstring repair | Exactly $100\%$ |
-| **Triage Delay Score** | Cumulative delay penalty for high-severity patients (snake bite / respiratory) | Minimized / Zero critical delay |
-| **Redundancy Rate** | Percentage of duplicate dispatches to the same location | Exactly 0% |
-| **Approximation Ratio** | Ratio of QAOA solution cost to the exact optimal cost | $\ge 0.70$ (raw $p=1$), $\ge 0.85$ (warm-started/repaired) |
-| **UI Response Latency** | Time to display initial route on interactive browser map | $< 0.5 \text{ seconds}$ (classical instant tier) |
+| **Hospital Turnaround Time** | Total mission time including transit + simulated ED offload | Minimised by the classical/quantum order comparison |
+| **Rig Clearance Violations** | Heavy rigs routed through low clearances or weight-limited bridges | 0 on the demo graph (classical pruning); limits are synthetic |
+| **Equipment Mismatch Rate** | Patients assigned to vehicles lacking required equipment | 0 by hard filtering before routing |
+| **Raw Quantum Feasibility (%)** | Raw sampled bitstrings that are valid permutations before repair | Reported per run; typically a few percent at $p=1$ |
+| **Repair Mass (%)** | Measured probability that repairs to the displayed order | Reported per run; not assumed to be 100% |
+| **Triage Delay Score** | Cumulative `60 s × severity × position` penalty | Included in the QUBO objective |
+| **Redundancy Rate** | Duplicate dispatches to the same location | 0 by one-hot coverage constraints |
+| **Energy Ratio** | Exact QUBO optimum divided by the repaired QAOA energy | Reported per run; typically 0.9–1.0 on preset S4 |
+| **UI Response Latency** | Time to display the classical route | Classical dispatch is immediate; quantum is a separate opt-in run |
+
 
 ---
 

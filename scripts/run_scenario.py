@@ -57,9 +57,12 @@ def main() -> int:
 
     print(f"scenario {args.scenario}: {scenarios[args.scenario].name}")
     for plan in result.plans:
+        stops = " -> ".join(
+            f"{incident_id} ({plan.patient_hospitals.get(incident_id, plan.hospital_id)})"
+            for incident_id in plan.incident_ids
+        )
         print(
-            f"  {plan.vehicle_id}: {' -> '.join(plan.incident_ids)}"
-            f" -> {plan.hospital_id}"
+            f"  {plan.vehicle_id}: {stops}"
             f" | transit {plan.total_transit_s / 60:.1f} min"
             f" | offload {plan.offload_min:.0f} min"
             f" | total {plan.total_mission_min:.1f} min"
@@ -67,6 +70,7 @@ def main() -> int:
             f" | equipment={plan.equipment_match}"
             f" specialty={plan.specialty_match}"
             f" clearance={plan.clearance_ok}"
+            f" pruned_edges={plan.pruned_edges}"
         )
     for note in result.notes:
         print(f"  note: {note}")

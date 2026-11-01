@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from quantum.traffic import (
     CLASS_COLORS,
     TrafficModel,
+    click_key,
     edge_name,
     nearest_edge,
+    street_names,
+    street_pick,
 )
 
 
@@ -63,3 +68,54 @@ def test_nearest_edge_on_grid(grid_graph):
 
 def test_nearest_edge_returns_none_when_far(grid_graph):
     assert nearest_edge(grid_graph, 41.0, -74.0, max_distance_m=50.0) is None
+
+
+def test_street_pick_is_serialisable(grid_graph):
+    pick = street_pick(grid_graph, 40.7501, -73.9795, max_distance_m=100.0)
+    assert pick is not None
+    assert pick["name"] == "Residential"
+    assert {pick["u"], pick["v"]} == {0, 1}
+    assert pick["distance_m"] < 30.0
+    assert set(pick) == {"u", "v", "key", "name", "distance_m"}
+
+
+def test_street_pick_returns_none_off_road(grid_graph):
+    assert street_pick(grid_graph, 41.0, -74.0, max_distance_m=50.0) is None
+
+
+def test_click_key_rounds_to_six_places():
+    assert click_key(40.7500001, -73.98) == "40.750000,-73.980000"
+    assert click_key(40.7500004, -73.98) == "40.750000,-73.980000"
+
+
+def test_network_multiplier_scales_profile():
+    model = TrafficModel()
+    when = datetime(2026, 11, 3, 8, 30)
+    base = model.delay_factor(1, 2, 0, _edge("primary"), when)
+    model.set_network_multiplier(1.5)
+    assert model.delay_factor(1, 2, 0, _edge("primary"), when) == pytest.approx(
+        base * 1.5
+    )
+
+
+def test_network_multiplier_does_not_scale_explicit_override():
+    model = TrafficModel()
+    when = datetime(2026, 11, 3, 8, 30)
+    model.set_override(1, 2, 0, 2.5)
+    model.set_network_multiplier(3.0)
+    assert model.delay_factor(1, 2, 0, _edge("primary"), when) == 2.5
+
+
+def test_street_override_applies_and_clears_all_named_edges(grid_graph):
+    model = TrafficModel()
+    when = datetime(2026, 11, 3, 8, 30)
+    applied = model.set_street_override(grid_graph, "Residential", 2.5)
+    assert applied > 0
+    assert model.delay_factor(0, 1, 0, {"highway": "residential"}, when) == 2.5
+    cleared = model.clear_street_override(grid_graph, "Residential")
+    assert cleared == applied
+    assert model.overrides == {}
+
+
+def test_street_names_are_ranked_and_deduplicated(grid_graph):
+    assert street_names(grid_graph) == ["Residential"]

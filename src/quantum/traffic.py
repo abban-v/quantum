@@ -92,6 +92,7 @@ class TrafficModel:
 
     overrides: dict[tuple[int, int, int], float] = field(default_factory=dict)
     source: str = "synthetic"
+    network_multiplier: float = 1.0
 
     def delay_factor(
         self,
@@ -106,7 +107,7 @@ class TrafficModel:
             return override
         table = _WEEKDAY if when.weekday() < 5 else _WEEKEND
         values = table.get(_road_class(edge), table["residential"])
-        return float(values[when.hour % 24])
+        return float(values[when.hour % 24]) * self.network_multiplier
 
     def set_override(self, u: int, v: int, key: int, factor: float) -> None:
         if factor <= 0:
@@ -118,6 +119,36 @@ class TrafficModel:
 
     def clear_all(self) -> None:
         self.overrides.clear()
+
+    def set_network_multiplier(self, factor: float) -> None:
+        """Scale every time-of-day profile value (not explicit overrides)."""
+        if factor <= 0:
+            raise ValueError("network traffic multiplier must be > 0")
+        self.network_multiplier = float(factor)
+
+    def set_street_override(
+        self, graph: nx.MultiDiGraph, name: str, factor: float
+    ) -> int:
+        """Apply one factor to every edge with ``name``; return edge count."""
+        if factor <= 0:
+            raise ValueError("traffic factor must be > 0")
+        count = 0
+        for u, v, key, data in graph.edges(keys=True, data=True):
+            if edge_name(data) == name:
+                self.set_override(u, v, key, factor)
+                count += 1
+        return count
+
+    def clear_street_override(self, graph: nx.MultiDiGraph, name: str) -> int:
+        """Remove overrides from every edge with ``name``; return removed count."""
+        count = 0
+        for u, v, key, data in graph.edges(keys=True, data=True):
+            if edge_name(data) == name:
+                override_key = (int(u), int(v), int(key))
+                if override_key in self.overrides:
+                    self.overrides.pop(override_key, None)
+                    count += 1
+        return count
 
     @staticmethod
     def congestion_class(delay_factor: float) -> CongestionClass:
@@ -175,6 +206,17 @@ def edge_name(edge: dict) -> str:
     return str(edge.get("highway") or "unnamed road").replace("_", " ").title()
 
 
+def street_names(graph: nx.MultiDiGraph, limit: int = 300) -> list[str]:
+    """Return the most common named streets, for a non-map traffic selector."""
+    counts: dict[str, int] = {}
+    for _, _, _, data in graph.edges(keys=True, data=True):
+        name = edge_name(data)
+        if name and name.lower() != "unnamed road":
+            counts[name] = counts.get(name, 0) + 1
+    ranked = sorted(counts, key=lambda name: (-counts[name], name))
+    return ranked[:limit]
+
+
 def _project(lat: float, lon: float, lat0: float) -> tuple[float, float]:
     """Local metres around a reference latitude."""
     return lon * 111_320.0 * math.cos(math.radians(lat0)), lat * 111_320.0
@@ -222,3 +264,28 @@ def nearest_edge(
     if best is None or best[0] > max_distance_m:
         return None
     return best[1], best[2], best[3], best[4], best[0]
+
+
+def street_pick(
+    graph: nx.MultiDiGraph,
+    lat: float,
+    lon: float,
+    max_distance_m: float = 80.0,
+) -> dict | None:
+    """Serialisable street selection for the dashboard's traffic editor."""
+    hit = nearest_edge(graph, lat, lon, max_distance_m=max_distance_m)
+    if hit is None:
+        return None
+    u, v, key, data, distance = hit
+    return {
+        "u": u,
+        "v": v,
+        "key": key,
+        "name": edge_name(data),
+        "distance_m": distance,
+    }
+
+
+def click_key(lat: float, lon: float) -> str:
+    """Stable key used to suppress duplicate map-click events."""
+    return f"{lat:.6f},{lon:.6f}"
