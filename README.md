@@ -2,7 +2,7 @@
 
 > **Quantum and hybrid optimization for time-critical emergency response under dynamic traffic, road closures, patient triage priorities, specialized vehicle equipment (ventilators/ALS), multi-agency coordination (Ambulance, Fire, Police), hospital offload delays, rig physical constraints, and tactical police staging.**
 >
-> **Featuring an Interactive Real-World Browser Map UI with Natural Language Incident Dispatch, backed by IBM Quantum Cloud QPU Execution.**
+> **Featuring an Interactive Real-World Browser Map UI with Natural Language Incident Dispatch, powered by Local Quantum Simulation using Qiskit & Qiskit Aer.**
 
 ---
 
@@ -31,7 +31,7 @@ Rather than existing as a static math model, this project delivers an **interact
    - **Multi-Agency Requirements:** (Fire Engine extrication required prior to EMS; Police scene safety clearance / green-corridor escort).
    - **Destination Hospital Selection:** (Burn Center for fire victims, Level 1 Trauma for head injuries, factoring live ER offload wait times).
    - **Rig Physical Clearance:** (Filtering low overpasses and weight limits for dispatched fire apparatus).
-5. **Real Quantum Execution via IBM Quantum Cloud:** The problem is compiled into an Ising Hamiltonian and submitted to **IBM Quantum Cloud QPUs** (using `qiskit-ibm-runtime`) or executed on a high-speed local simulator.
+5. **Local Quantum Circuit Execution via Qiskit & Qiskit Aer:** The problem is compiled into an Ising Hamiltonian and solved entirely on your local machine using Qiskit and Qiskit Aer (utilizing statevector and shot-based `AerSimulator` with optional hardware-realistic noise models), driving the classical-quantum hybrid loop (COBYLA/SPSA) with zero cloud dependencies or external API keys.
 6. **Live Route Animation:** The user watches the emergency vehicles dynamically mobilize and animate along their computed optimal routes on the interactive map in real time.
 
 ---
@@ -123,12 +123,12 @@ We address this multi-agency emergency routing challenge by formulating it as an
                    └─ Inter-Agency Precedence & Police Staging Synchronization
                                │
                                ▼
-        [Quantum Optimization via IBM Quantum Cloud / Local Aer]
+        [Local Quantum Optimization via Qiskit Aer Engine]
           ┌─────────────────────────────────────────────────────────────┐
-          │  Primary: IBM Quantum Heron / Eagle QPUs                    │
-          │  (via `qiskit-ibm-runtime` SamplerV2 / EstimatorV2)         │
-          │                                                             │
-          │  Fallback / Dev: Qiskit Aer Statevector & Noise Simulator   │
+          │  Fully Local Qiskit Aer Execution                           │
+          │  - AerSimulator (Exact Statevector & Shot-based Sampler)    │
+          │  - Realistic Hardware Noise Models                          │
+          │  - Fast, self-contained optimization loop on your machine   │
           │                                                             │
           │  Classical Optimizer Loop: COBYLA / SPSA updating (γ, β)    │
           └─────────────────────────────────────────────────────────────┘
@@ -150,8 +150,8 @@ We address this multi-agency emergency routing challenge by formulating it as an
 1. **Natural Language Emergency Dispatch:**
    Users specify the situation naturally. The NLP extraction layer translates complex clinical and situational prose into concrete mathematical parameters ($\lambda_i$, equipment flags, agency dependencies, hospital criteria).
 
-2. **Cloud Quantum Execution via IBM Quantum Cloud (`qiskit-ibm-runtime`):**
-   Standard consumer hardware struggles to simulate quantum state spaces beyond small qubit thresholds. We connect our quantum pipeline directly to **IBM Quantum Cloud QPUs**, utilizing Qiskit Runtime Primitives (`SamplerV2`, `EstimatorV2`) for real quantum processor execution, with an offline **Qiskit Aer** fallback for rapid local development.
+2. **Local Quantum Simulation via Qiskit & Qiskit Aer:**
+   The optimization engine runs 100% locally on the host system. Using Qiskit Aer's high-performance C++ backend (`AerSimulator`), we execute parameterized QAOA circuits using statevector simulation (exact quantum probabilities) and shot-based sampling with realistic noise models. This ensures rapid iteration, complete reproducibility, zero cloud queue times, and zero API costs while faithfully modeling true quantum circuit dynamics.
 
 3. **Hospital Offload & Bed Availability Integration:**
    Instead of terminating at an arbitrary fixed hospital, the final leg selects from available regional hospitals $h \in \mathcal{H}$ minimizing:
@@ -270,10 +270,10 @@ where each qubit corresponds to an assigned $(v, i, t)$ tuple.
   - Mathematical QUBO matrix builder incorporating urgency, equipment matching, fire-EMS precedence, police staging synchronization, hospital offload trade-offs, and anti-redundancy.
   - Converts QUBO to Qiskit `SparsePauliOp` Pauli-$Z$ Hamiltonian.
   - Qubit-reduction via physical clearance edge pruning, equipment filtering, and fixed start coordinates.
-- [ ] **IBM Quantum Cloud & Local Qiskit Solver (`src/quantum/qaoa_solver.py`):**
-  - Cloud QPU execution via `qiskit-ibm-runtime` (using `SamplerV2` and `EstimatorV2`).
-  - Local Qiskit Aer statevector & noise simulator for fast offline development.
+- [ ] **Local Qiskit & Qiskit Aer Solver (`src/quantum/qaoa_solver.py`):**
+  - Parameterized QAOA ansatz with $p$ layers executed via local Qiskit Aer (`AerSimulator` statevector and shot modes).
   - Classical optimizer loop (COBYLA/SPSA) minimizing $\langle \psi(\gamma, \beta) | H_C | \psi(\gamma, \beta) \rangle$.
+  - Evaluation of both idealized statevectors and realistic gate noise models.
 - [ ] **Classical Baseline Benchmark (`src/quantum/baselines.py`):**
   - Uncoordinated Greedy Nearest Neighbor (demonstrating common real-world failures: dumping patients into 3-hour offload queues, routing fire engines into low clearances, arriving before police clearance).
   - Classical 2-Opt local search / Simulated Annealing.
@@ -290,8 +290,7 @@ where each qubit corresponds to an assigned $(v, i, t)$ tuple.
 - **Language:** Python 3.12
 - **Interactive Web Interface:** Streamlit / Leaflet / Folium (real-world OpenStreetMap tiles, interactive click listeners, and animated vehicle path overlays)
 - **Natural Language Parsing:** Rule-based / lightweight NLP parser extracting medical triage urgency, agency requirements, and equipment flags
-- **Quantum Cloud Backend:** IBM Quantum Cloud via `qiskit-ibm-runtime>=0.51.0` (executing on Heron/Eagle QPUs)
-- **Local Quantum Simulator:** `qiskit-aer>=0.18.2` (AerSimulator with statevector and shot-noise models)
+- **Local Quantum Simulator:** `qiskit-aer>=0.18.2` (High-performance C++ `AerSimulator` with statevector and shot-noise models)
 - **Quantum Core SDK:** `qiskit>=2.6.1`
 - **Classical Optimization:** SciPy (`minimize` with COBYLA/SLSQP), NumPy
 - **Graph & Geospatial Modeling:** NetworkX, Shapely / GeoPandas
@@ -312,7 +311,7 @@ quantum/
         ├── problem.py                 # Multi-agency network, traffic, rig limits, ER wait times & fleet models
         ├── qubo.py                    # Multi-agency QUBO matrix & Pauli Hamiltonian builder
         ├── dynamic_dispatcher.py       # En-route detour, staging synchronization, hospital selection & capacity logic
-        ├── qaoa_solver.py             # QAOA execution on IBM Quantum Cloud & Qiskit Aer
+        ├── qaoa_solver.py             # QAOA execution via local Qiskit Aer
         ├── baselines.py               # Classical Greedy, 2-Opt, & Brute-Force
         └── visualize.py               # Interactive map renderers & performance visualizer
 ```
@@ -343,21 +342,14 @@ cd /path/to/quantum/quantum
 uv sync
 ```
 
-### 2. Configure IBM Quantum Cloud Credentials (Optional for Cloud QPU)
-To execute QAOA circuits on actual IBM Quantum Cloud QPUs, set your IBM Quantum API token:
+### 2. Launch the Interactive Real-World Web Dashboard
 ```bash
-export QISKIT_IBM_TOKEN="your_ibm_quantum_api_token_here"
-```
-*(If no token is provided, the system automatically runs on the high-speed local Qiskit Aer simulator.)*
-
-### 3. Launch the Interactive Real-World Web Dashboard
-```bash
-# Launch the interactive browser map application
+# Launch the interactive browser map application (100% local, no API keys required)
 uv run streamlit run app.py
 ```
-*(Click anywhere on the map, describe the emergency in the prompt box, and watch the optimal quantum-assisted routes execute live!)*
+*(Click anywhere on the map, describe the emergency in plain text, and watch the optimal quantum-assisted routes execute live!)*
 
-### 4. Run the Jupyter Research & Benchmark Notebook
+### 3. Run the Jupyter Research & Benchmark Notebook
 ```bash
 uv run jupyter notebook notebooks/emergency_routing.ipynb
 ```
