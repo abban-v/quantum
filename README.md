@@ -1,6 +1,8 @@
 # Quantum-Assisted Emergency Vehicle Routing (Q-EVR)
 
 > **Quantum and hybrid optimization for time-critical emergency response under dynamic traffic, road closures, patient triage priorities, specialized vehicle equipment (ventilators/ALS), multi-agency coordination (Ambulance, Fire, Police), hospital offload delays, rig physical constraints, and tactical police staging.**
+>
+> **Featuring an Interactive Real-World Browser Map UI with Natural Language Incident Dispatch, backed by IBM Quantum Cloud QPU Execution.**
 
 ---
 
@@ -9,6 +11,28 @@
 In time-critical emergencies—such as multi-point fire breakouts, industrial explosions, or major toxic incidents—seconds count. Inefficient vehicle dispatch and uncoordinated multi-agency routing directly increase response latency, worsen patient outcomes, and risk severe casualties.
 
 Conversations with frontline first responders, paramedics (on *r/ems*), firefighters (*r/firefighting*), and 911 dispatchers (*r/911dispatchers*) reveal critical real-world failure modes that traditional routing algorithms fail to address. We model these directly in our system:
+
+---
+
+### The Interactive Real-World Vision: Browser Map & Text Dispatch
+
+Rather than existing as a static math model, this project delivers an **interactive browser-based emergency command dashboard**:
+
+1. **Interactive Real-World Map:** A live, dynamic city map (rendered in the browser) displaying road networks, active traffic congestion, low overpasses, bridges, candidate hospitals with real-time ER offload queues, and geographically stationed emergency vehicles (BLS Ambulances, ALS Mobile ICUs with ventilators, Fire Engines, and Police Cruisers).
+2. **Click-to-Incident Dispatch:** The operator clicks any location on the map to place an active incident marker.
+3. **Natural Language Emergency Specification ("In Text"):** The user specifies the emergency in plain text. Examples:
+   - *"Apartment building fire, 2 people trapped on 3rd floor, severe smoke inhalation with acute respiratory arrest."*
+   - *"Hiker bitten by venomous viper on nature trail, swelling rapidly, difficulty breathing."*
+   - *"Elderly patient with low-grade fever and mild dehydration."*
+   - *"Volatile domestic altercation with serious head trauma, scene actively unstable."*
+4. **Automated Requirement & Triage Extraction:** The system automatically analyzes the text prompt and extracts the underlying mathematical parameters:
+   - **Triage Urgency Score ($\lambda_i$):** (e.g., Critical $\lambda = 50$ for respiratory arrest/snake bite vs. Low $\lambda = 1$ for fever).
+   - **Specialized Equipment Demand:** (Ventilator/ALS unit required vs. antivenom stock vs. standard stretcher).
+   - **Multi-Agency Requirements:** (Fire Engine extrication required prior to EMS; Police scene safety clearance / green-corridor escort).
+   - **Destination Hospital Selection:** (Burn Center for fire victims, Level 1 Trauma for head injuries, factoring live ER offload wait times).
+   - **Rig Physical Clearance:** (Filtering low overpasses and weight limits for dispatched fire apparatus).
+5. **Real Quantum Execution via IBM Quantum Cloud:** The problem is compiled into an Ising Hamiltonian and submitted to **IBM Quantum Cloud QPUs** (using `qiskit-ibm-runtime`) or executed on a high-speed local simulator.
+6. **Live Route Animation:** The user watches the emergency vehicles dynamically mobilize and animate along their computed optimal routes on the interactive map in real time.
 
 ---
 
@@ -72,75 +96,85 @@ Finding global or near-global optima within critical response seconds challenges
 
 ## 2. Our Ideas & Core Approach
 
-We address this multi-agency emergency routing challenge by formulating it as a **Hybrid Quantum-Classical Optimization Pipeline**.
+We address this multi-agency emergency routing challenge by formulating it as an **Interactive Hybrid Quantum-Classical Optimization Pipeline**.
 
 ```
-[City Sensor, Traffic, 911 Dispatch, Hospital Offload Status & Multi-Agency Feed]
-  (Locations, Travel Times, Congestion Multipliers, Road Blocks, Bridge Heights, ER Wait Times, Triage/Equipment)
-                                              │
-                                              ▼
-                                 [1. Classical Preprocessing]
-                                   ├─ Shortest-path time matrix with dynamic traffic & blockages
-                                   ├─ Vehicle-Class Physical Geometry Pruning (Height, weight & turning radius limits)
-                                   ├─ Hospital Offload Wait Time & Specialty Center Evaluation
-                                   ├─ Agency & Facility Matching (Ventilator -> ALS EMS; Rescue/Extrication -> Fire; Escort -> Police)
-                                   ├─ Tactical Staging & Precedence Definition (Police stage clearance, Fire extrication < EMS)
-                                   └─ Qubit-reduction: Pre-clamp incompatible vehicle-incident pairs & fix initial hubs
-                                              │
-                                              ▼
-                                  [2. QUBO / Ising Formulation]
-                                   ├─ Transition Cost + Dynamic Congestion (with Police green-corridor discounts)
-                                   ├─ Hospital Selection with ER Offload Delays
-                                   ├─ Triage Urgency Penalties (Heavily penalize late arrival for severe cases)
-                                   ├─ Equipment Mismatch Penalty (Ensures ventilator units go to respiratory cases)
-                                   ├─ Inter-Agency Precedence & Police Staging Synchronization
-                                   ├─ Anti-Redundancy Constraint (Exactly one primary vehicle per task)
-                                   └─ Valid-Route Penalty Constraints (One-node-per-step, visit-once)
-                                              │
-                                              ▼
-                               [3. Quantum Optimization (QAOA)]
-                                   ├─ Parameterized Quantum Circuit (Cost & Mixer layers)
-                                   ├─ Quantum State Superposition & Interference
-                                   └─ Classical Optimizer Loop (COBYLA / SPSA updating γ, β)
-                                              │
-                                              ▼
-                                [4. Postprocessing & Evaluation]
-                                   ├─ Bitstring measurement & multi-agency route decoding
-                                   ├─ Light repair heuristic for constraint satisfaction & schedule alignment
-                                   └─ Benchmark comparison against Classical Baselines
+[User Browser: Interactive Real-World Map]
+  (Click to place incident + Type emergency description in natural language)
+                               │
+                               ▼
+            [Natural Language Intent & Triage Parser]
+              ├─ Extract Triage Urgency (e.g. Snake bite / Respiratory -> λ=50)
+              ├─ Identify Medical Needs (Ventilator required -> ALS ambulance)
+              ├─ Identify Agency Requirements (Structure fire -> Fire extrication first; Danger -> Police staging)
+              └─ Select Candidate Specialty Hospitals (Burn Center, Stroke Unit + ER Offload Wait)
+                               │
+                               ▼
+                 [Classical Graph Preprocessing]
+                   ├─ Filter physical road network (prune low overpasses & weak bridges for Fire Engines)
+                   ├─ Compute dynamic congestion matrix with police corridor discounts
+                   └─ Qubit-reduction: Pre-clamp incompatible vehicle-incident variables & fix origins
+                               │
+                               ▼
+                  [QUBO / Ising Formulation]
+                   ├─ Multi-Agency Transition Cost + Traffic
+                   ├─ Hospital Selection + ER Offload Delays ("Holding the Wall" mitigation)
+                   ├─ Triage Urgency + Equipment Mismatch Penalties
+                   └─ Inter-Agency Precedence & Police Staging Synchronization
+                               │
+                               ▼
+        [Quantum Optimization via IBM Quantum Cloud / Local Aer]
+          ┌─────────────────────────────────────────────────────────────┐
+          │  Primary: IBM Quantum Heron / Eagle QPUs                    │
+          │  (via `qiskit-ibm-runtime` SamplerV2 / EstimatorV2)         │
+          │                                                             │
+          │  Fallback / Dev: Qiskit Aer Statevector & Noise Simulator   │
+          │                                                             │
+          │  Classical Optimizer Loop: COBYLA / SPSA updating (γ, β)    │
+          └─────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+              [Postprocessing & Solution Decoding]
+                ├─ Decode bitstrings into vehicle transit legs & step timelines
+                ├─ Validate constraint satisfaction & enforce schedule alignment
+                └─ Compute baseline comparison (vs. Uncoordinated Greedy & 2-Opt)
+                               │
+                               ▼
+        [Live Browser UI: Animated Multi-Vehicle Routing]
+          (Watch Ambulances, Fire Engines & Police Cruisers dynamically animate
+           along optimal routes to incident sites and specialty hospitals)
 ```
 
 ### Key Conceptual Pillars
 
-1. **Hospital Offload & Bed Availability Integration:**
+1. **Natural Language Emergency Dispatch:**
+   Users specify the situation naturally. The NLP extraction layer translates complex clinical and situational prose into concrete mathematical parameters ($\lambda_i$, equipment flags, agency dependencies, hospital criteria).
+
+2. **Cloud Quantum Execution via IBM Quantum Cloud (`qiskit-ibm-runtime`):**
+   Standard consumer hardware struggles to simulate quantum state spaces beyond small qubit thresholds. We connect our quantum pipeline directly to **IBM Quantum Cloud QPUs**, utilizing Qiskit Runtime Primitives (`SamplerV2`, `EstimatorV2`) for real quantum processor execution, with an offline **Qiskit Aer** fallback for rapid local development.
+
+3. **Hospital Offload & Bed Availability Integration:**
    Instead of terminating at an arbitrary fixed hospital, the final leg selects from available regional hospitals $h \in \mathcal{H}$ minimizing:
    $$\text{Transit Time}(i \to h) + T_{\text{offload}}(h) - \Omega(h, \text{condition}_i)$$
    drastically reducing ambulance turnaround times and mitigating systemwide "Level Zero".
 
-2. **Physical Clearance & Weight Safety Guarantee:**
+4. **Physical Clearance & Weight Safety Guarantee:**
    Rig dimensions are enforced upstream during classical preprocessing. Edges with overpass heights lower than rig clearance or bridges below weight capacity are eliminated from the transition matrix, preventing rig entrapment while saving physical qubits.
 
-3. **Tactical Staging Synchronization with Police:**
+5. **Tactical Staging Synchronization with Police:**
    For high-hazard or violent calls, EMS routes to a nearby staging coordinate and is held until Police arrival:
    $$t_{\text{ems}} = t_{\text{police}} + \Delta_{\text{clearance}}$$
    eliminating unprotected paramedic exposure and minimizing post-clearance response lag.
 
-4. **Multi-Agency Precedence & Role Synchronization:**
+6. **Multi-Agency Precedence & Role Synchronization:**
    For incidents involving structural fire or entrapment, the optimizer guarantees through quadratic penalty coupling that the **Fire Rescue unit arrives at step $t_{\text{fire}} < t_{\text{ems}}$**, ensuring victims are extricated before ambulance arrival.
 
-5. **Police "Green Corridor" Clearance Modeling:**
+7. **Police "Green Corridor" Clearance Modeling:**
    When a police escort traverses an arterial road corridor $(i, j)$ prior to ambulance or fire truck arrival, the dynamic traffic congestion multiplier is reduced:
    $$\tau'_{ij} = \kappa \cdot \tau_{ij} \quad (0 < \kappa < 1)$$
 
-6. **Medical Facility & Equipment Compatibility:**
+8. **Medical Facility & Equipment Compatibility:**
    Patients with respiratory distress are served exclusively by vehicles possessing active ventilator capabilities, either by hard pre-pruning incompatible decision variables or through a massive penalty in the Hamiltonian.
-
-7. **Non-Linear Triage Urgency Penalties:**
-   To guarantee that a critical snake-bite or respiratory-arrest victim is reached before a fever patient:
-   $$\lambda_{\text{respiratory / snake bite}} \gg \lambda_{\text{fever}}$$
-
-8. **Quantum Advantage in Rugged Energy Landscapes:**
-   Multi-agency precedence, staging synchronization, hospital offload trade-offs, and dynamic traffic form a deeply non-convex optimization surface with steep barrier potentials. QAOA leverages quantum superposition and tunneling across barrier potentials to explore non-convex solution spaces where classical greedy heuristics get trapped.
 
 ---
 
@@ -221,23 +255,24 @@ where each qubit corresponds to an assigned $(v, i, t)$ tuple.
 ## 4. What We Plan to Do
 
 - [x] Define real-world multi-agency emergency dispatch use cases (fire extrication precedence, police corridor clearance, ventilator matching, snake bite vs. fever detour, hospital offload wait-times, rig geometry limits, police staging synchronization).
+- [ ] **Interactive Real-World Map Dashboard (`app.py` & `src/quantum/ui/`):**
+  - Interactive browser map showing live city street network, vehicle locations, fire stations, and hospitals.
+  - Click-on-map incident placing with pop-up text entry modal.
+  - Real-time animated vehicle transit along selected optimal paths.
+- [ ] **Natural Language Incident & Triage Parser (`src/quantum/nlp_parser.py`):**
+  - Converts user plain-text descriptions into mathematical parameters: triage urgency ($\lambda_i$), equipment tags (ventilator/ALS), agency dependencies (Fire/Police), and hospital specialty tags.
 - [ ] **Multi-Agency Synthetic Network Generator (`src/quantum/problem.py`):**
   - City graph with multi-agency staging hubs (Hospital, Fire Station, Police Precinct).
   - Physical road attributes: bridge weight limits, overpass clearances, road closures, and dynamic traffic.
   - Candidate hospital profiles with live ER offload wait times ($T_{\text{offload}}$) and specialty accreditations.
-  - Incident profiles with triage urgency ($\lambda_i$), equipment needs (ventilators), hazard tags (fire extrication required, police scene safety required).
   - Heterogeneous fleet modeling: BLS vs. ALS ambulances, heavy Fire Engines, Police Patrol Escorts.
 - [ ] **Multi-Agency QUBO & Hamiltonian Generator (`src/quantum/qubo.py`):**
   - Mathematical QUBO matrix builder incorporating urgency, equipment matching, fire-EMS precedence, police staging synchronization, hospital offload trade-offs, and anti-redundancy.
   - Converts QUBO to Qiskit `SparsePauliOp` Pauli-$Z$ Hamiltonian.
   - Qubit-reduction via physical clearance edge pruning, equipment filtering, and fixed start coordinates.
-- [ ] **Dynamic Multi-Agency Dispatcher (`src/quantum/dynamic_dispatcher.py`):**
-  - Simulates active ambulance en-route with a fever patient.
-  - Injects new high-priority snake-bite / respiratory call, burning structure incident, and volatile police-staged scene.
-  - Evaluates hospital offload delays to choose optimal destination ER.
-  - Coordinates police green corridor routing, fires extrication sequencing, and capacity-aware ambulance detour.
-- [ ] **QAOA Circuit & Solver (`src/quantum/qaoa_solver.py`):**
-  - Parameterized QAOA ansatz with $p$ layers using Qiskit 2.x and Qiskit Aer.
+- [ ] **IBM Quantum Cloud & Local Qiskit Solver (`src/quantum/qaoa_solver.py`):**
+  - Cloud QPU execution via `qiskit-ibm-runtime` (using `SamplerV2` and `EstimatorV2`).
+  - Local Qiskit Aer statevector & noise simulator for fast offline development.
   - Classical optimizer loop (COBYLA/SPSA) minimizing $\langle \psi(\gamma, \beta) | H_C | \psi(\gamma, \beta) \rangle$.
 - [ ] **Classical Baseline Benchmark (`src/quantum/baselines.py`):**
   - Uncoordinated Greedy Nearest Neighbor (demonstrating common real-world failures: dumping patients into 3-hour offload queues, routing fire engines into low clearances, arriving before police clearance).
@@ -253,27 +288,33 @@ where each qubit corresponds to an assigned $(v, i, t)$ tuple.
 
 ### Tech Stack
 - **Language:** Python 3.12
-- **Quantum SDK:** Qiskit 2.6+, Qiskit Aer 0.18+ (Noise-free and noisy statevector/sampler backends)
+- **Interactive Web Interface:** Streamlit / Leaflet / Folium (real-world OpenStreetMap tiles, interactive click listeners, and animated vehicle path overlays)
+- **Natural Language Parsing:** Rule-based / lightweight NLP parser extracting medical triage urgency, agency requirements, and equipment flags
+- **Quantum Cloud Backend:** IBM Quantum Cloud via `qiskit-ibm-runtime>=0.51.0` (executing on Heron/Eagle QPUs)
+- **Local Quantum Simulator:** `qiskit-aer>=0.18.2` (AerSimulator with statevector and shot-noise models)
+- **Quantum Core SDK:** `qiskit>=2.6.1`
 - **Classical Optimization:** SciPy (`minimize` with COBYLA/SLSQP), NumPy
-- **Visualization:** Matplotlib, NetworkX
-- **Interactive Environment:** Jupyter Notebooks
+- **Graph & Geospatial Modeling:** NetworkX, Shapely / GeoPandas
+- **Interactive Development:** Jupyter Notebooks
 
 ### Proposed Codebase Architecture
 ```text
 quantum/
 ├── pyproject.toml                     # Project dependencies and packaging
 ├── README.md                          # Project documentation & formulation
+├── app.py                             # Interactive browser application (Streamlit / Web Map)
 ├── notebooks/
 │   └── emergency_routing.ipynb        # Interactive end-to-end demonstration
 └── src/
     └── quantum/
         ├── __init__.py
+        ├── nlp_parser.py              # Text emergency prompt -> mathematical parameters
         ├── problem.py                 # Multi-agency network, traffic, rig limits, ER wait times & fleet models
         ├── qubo.py                    # Multi-agency QUBO matrix & Pauli Hamiltonian builder
         ├── dynamic_dispatcher.py       # En-route detour, staging synchronization, hospital selection & capacity logic
-        ├── qaoa_solver.py             # QAOA quantum execution & bitstring sampler
+        ├── qaoa_solver.py             # QAOA execution on IBM Quantum Cloud & Qiskit Aer
         ├── baselines.py               # Classical Greedy, 2-Opt, & Brute-Force
-        └── visualize.py               # Multi-agency route map & performance visualizer
+        └── visualize.py               # Interactive map renderers & performance visualizer
 ```
 
 ### Evaluation Metrics
@@ -293,13 +334,30 @@ quantum/
 
 ## 6. How to Run & Get Started
 
+### 1. Setup Environment
 ```bash
 # Clone and enter the repository
 cd /path/to/quantum/quantum
 
-# Set up virtual environment and install dependencies
+# Install dependencies using uv
 uv sync
+```
 
-# Launch the interactive demonstration notebook
+### 2. Configure IBM Quantum Cloud Credentials (Optional for Cloud QPU)
+To execute QAOA circuits on actual IBM Quantum Cloud QPUs, set your IBM Quantum API token:
+```bash
+export QISKIT_IBM_TOKEN="your_ibm_quantum_api_token_here"
+```
+*(If no token is provided, the system automatically runs on the high-speed local Qiskit Aer simulator.)*
+
+### 3. Launch the Interactive Real-World Web Dashboard
+```bash
+# Launch the interactive browser map application
+uv run streamlit run app.py
+```
+*(Click anywhere on the map, describe the emergency in the prompt box, and watch the optimal quantum-assisted routes execute live!)*
+
+### 4. Run the Jupyter Research & Benchmark Notebook
+```bash
 uv run jupyter notebook notebooks/emergency_routing.ipynb
 ```
