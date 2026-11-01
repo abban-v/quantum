@@ -67,6 +67,7 @@ def build_qubo(
     incidents: list[Incident],
     hospital: Hospital,
     penalty: float | None = None,
+    patient_hospitals: dict[str, str] | None = None,
 ) -> QuboProblem:
     m = len(incidents)
     if m < 2:
@@ -79,23 +80,49 @@ def build_qubo(
     if n > prepared.cfg.max_qubits:
         raise QuboError(f"{n} qubits exceed max_qubits={prepared.cfg.max_qubits}")
 
+    hospital_by_id = patient_hospitals or {
+        incident.id: hospital.id for incident in incidents
+    }
     depot_to = [
         route_leg(prepared, vehicle, vehicle.id, incident.id).travel_time_s
         for incident in incidents
     ]
-    between = [
-        [
-            route_leg(prepared, vehicle, a.id, b.id).travel_time_s
-            if a.id != b.id
-            else 0.0
-            for b in incidents
-        ]
-        for a in incidents
-    ]
     to_hospital = [
-        route_leg(prepared, vehicle, incident.id, hospital.id).travel_time_s
+        route_leg(
+            prepared, vehicle, incident.id, hospital_by_id[incident.id]
+        ).travel_time_s
         for incident in incidents
     ]
+    if patient_hospitals:
+        # After incident i the vehicle drops patient i at hospital_i, then
+        # continues to incident j. Include that hospital detour in the
+        # transition cost so the quantum order matches the simulated route.
+        between = [
+            [
+                (
+                    route_leg(
+                        prepared, vehicle, a.id, hospital_by_id[a.id]
+                    ).travel_time_s
+                    + route_leg(
+                        prepared, vehicle, hospital_by_id[a.id], b.id
+                    ).travel_time_s
+                )
+                if a.id != b.id
+                else 0.0
+                for b in incidents
+            ]
+            for a in incidents
+        ]
+    else:
+        between = [
+            [
+                route_leg(prepared, vehicle, a.id, b.id).travel_time_s
+                if a.id != b.id
+                else 0.0
+                for b in incidents
+            ]
+            for a in incidents
+        ]
 
     max_travel = max(depot_to + to_hospital + [value for row in between for value in row])
     max_urgency = max(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import networkx as nx
 
 from quantum.config import Config
@@ -16,6 +18,7 @@ from quantum.dispatch import (
 )
 from quantum.nlp_parser import TriageResult
 from quantum.problem import Incident, Scenario, Vehicle
+from quantum.traffic import TrafficModel
 
 
 def find_cluster_vehicle(scenario: Scenario, incidents: list[Incident]) -> Vehicle | None:
@@ -84,10 +87,14 @@ def build_custom_scenario(
 
 
 def dispatch_scenario(
-    scenario: Scenario, graph: nx.MultiDiGraph, cfg: Config
+    scenario: Scenario,
+    graph: nx.MultiDiGraph,
+    cfg: Config,
+    traffic: TrafficModel | None = None,
+    when: datetime | None = None,
 ) -> tuple[PreparedProblem, list[RoutePlan]]:
     """Cluster when one vehicle can serve every stop, else use greedy assignment."""
-    prepared = prepare(scenario, graph, cfg)
+    prepared = prepare(scenario, graph, cfg, traffic=traffic, when=when)
     if len(scenario.incidents) >= 2:
         vehicle = find_cluster_vehicle(scenario, scenario.incidents)
         if vehicle is not None:

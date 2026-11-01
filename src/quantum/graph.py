@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import networkx as nx
 
 from quantum.problem import Vehicle
+from quantum.traffic import TrafficModel
 
 
 class NoPathError(RuntimeError):
@@ -39,14 +41,27 @@ def travel_time_s(edge: dict[str, Any], traffic_multiplier: float = 1.0) -> floa
 
 
 def build_routing_graph(
-    graph: nx.MultiDiGraph, traffic_multiplier: float = 1.0
+    graph: nx.MultiDiGraph,
+    traffic_multiplier: float = 1.0,
+    traffic: TrafficModel | None = None,
+    when: datetime | None = None,
 ) -> nx.DiGraph:
-    """Collapse parallel edges to the fastest directed edge per node pair."""
+    """Collapse parallel edges to the fastest directed edge per node pair.
+
+    When ``traffic`` and ``when`` are given, each edge uses its own time-of-day
+    delay factor. Otherwise the legacy scalar ``traffic_multiplier`` applies to
+    every edge, which keeps the existing tests and CLI behaviour intact.
+    """
     routing = nx.DiGraph()
     routing.graph.update(graph.graph)
     routing.add_nodes_from(graph.nodes(data=True))
     for u, v, key, data in graph.edges(keys=True, data=True):
-        cost = travel_time_s(data, traffic_multiplier)
+        factor = (
+            traffic.delay_factor(u, v, key, data, when)
+            if traffic is not None and when is not None
+            else traffic_multiplier
+        )
+        cost = travel_time_s(data, factor)
         if cost is None:
             continue
         existing = routing.get_edge_data(u, v)
@@ -60,8 +75,11 @@ def build_routing_graph(
             key=key,
             geometry=data.get("geometry"),
             highway=data.get("highway"),
+            name=data.get("name"),
             maxheight_m=data.get("maxheight_m"),
             maxweight_kg=data.get("maxweight_kg"),
+            delay_factor=float(factor),
+            speed_kph=data.get("speed_kph"),
         )
     return routing
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
+from quantum.traffic import TrafficModel
 from quantum.graph import (
     NoPathError,
     build_routing_graph,
@@ -18,6 +21,18 @@ def test_travel_time_uses_multiplier():
     assert travel_time_s({"travel_time": 10.0}, 1.5) == pytest.approx(15.0)
     assert travel_time_s({"length": 100.0, "speed_kph": 36.0}, 1.0) == pytest.approx(10.0)
     assert travel_time_s({}, 1.0) is None
+
+
+def test_time_of_day_traffic_changes_edge_cost(grid_graph):
+    model = TrafficModel()
+    peak = build_routing_graph(
+        grid_graph, 1.0, traffic=model, when=datetime(2026, 11, 3, 8, 30)
+    )
+    night = build_routing_graph(
+        grid_graph, 1.0, traffic=model, when=datetime(2026, 11, 3, 3, 30)
+    )
+    assert peak[0][1]["travel_time_s"] > night[0][1]["travel_time_s"]
+    assert peak[0][1]["delay_factor"] > night[0][1]["delay_factor"]
 
 
 def test_routing_and_metrics(grid_graph):

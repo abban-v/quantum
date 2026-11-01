@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from itertools import permutations
 
 import networkx as nx
@@ -18,6 +19,7 @@ from quantum.graph import (
     shortest_path,
 )
 from quantum.problem import URGENCY_STEP_SECONDS, Hospital, Incident, Scenario, Vehicle
+from quantum.traffic import TrafficModel
 
 
 class DispatchError(RuntimeError):
@@ -58,6 +60,8 @@ class RoutePlan:
     mode: str = "classical"
     objective_score_s: float = 0.0
     notes: list[str] = field(default_factory=list)
+    patient_hospitals: dict[str, str] = field(default_factory=dict)
+    pruned_edges: int = 0
 
     @property
     def coords(self) -> list[tuple[float, float]]:
@@ -85,9 +89,17 @@ class PreparedProblem:
     snap: dict[str, int]
     pruned: dict[str, nx.DiGraph]
     cfg: Config
+    traffic: TrafficModel | None = None
+    when: datetime | None = None
 
 
-def prepare(scenario: Scenario, graph: nx.MultiDiGraph, cfg: Config) -> PreparedProblem:
+def prepare(
+    scenario: Scenario,
+    graph: nx.MultiDiGraph,
+    cfg: Config,
+    traffic: TrafficModel | None = None,
+    when: datetime | None = None,
+) -> PreparedProblem:
     """Build routing graphs, snap every target, and prune per vehicle."""
     if not scenario.incidents:
         raise DispatchError("Scenario has no incidents")
@@ -96,7 +108,9 @@ def prepare(scenario: Scenario, graph: nx.MultiDiGraph, cfg: Config) -> Prepared
     if not scenario.hospitals:
         raise DispatchError("Scenario has no hospitals")
 
-    routing = build_routing_graph(graph, scenario.traffic_multiplier)
+    routing = build_routing_graph(
+        graph, scenario.traffic_multiplier, traffic=traffic, when=when
+    )
 
     hospital_points = [(h.id, h.lat, h.lon) for h in scenario.hospitals]
     vehicle_points = [(v.id, v.lat, v.lon) for v in scenario.vehicles]
@@ -117,6 +131,8 @@ def prepare(scenario: Scenario, graph: nx.MultiDiGraph, cfg: Config) -> Prepared
         snap=snap,
         pruned=pruned,
         cfg=cfg,
+        traffic=traffic,
+        when=when,
     )
 
 
@@ -199,6 +215,9 @@ def plan_incident(prepared: PreparedProblem, vehicle: Vehicle, incident: Inciden
         specialty_match=best.specialty_match,
         mode="classical",
         objective_score_s=total_transit + best.offload_s,
+        patient_hospitals={incident.id: best.hospital.id},
+        pruned_edges=prepared.routing.number_of_edges()
+        - prepared.pruned[vehicle.id].number_of_edges(),
     )
 
 
@@ -242,6 +261,9 @@ def assign(prepared: PreparedProblem) -> DispatchResult:
                 specialty_match=option.specialty_match,
                 mode="classical",
                 objective_score_s=total,
+                patient_hospitals={incident.id: option.hospital.id},
+                pruned_edges=prepared.routing.number_of_edges()
+                - prepared.pruned[vehicle.id].number_of_edges(),
             )
             if best is None or total < best[0]:
                 best = (total, vehicle, plan)
@@ -317,6 +339,88 @@ def order_cluster(
     return list(best_order), best_legs, best_cost
 
 
+def choose_patient_hospitals(
+    prepared: PreparedProblem, vehicle: Vehicle, incidents: list[Incident]
+) -> dict[str, str]:
+    """Pick the best hospital for each patient independently.
+
+    This is the demo's per-patient rule: specialty is a hard filter when a
+    matching hospital exists, then transit + offload decides. The fallback to
+    all hospitals is recorded on the plan so the UI can warn about it.
+    """
+    chosen: dict[str, str] = {}
+    for incident in incidents:
+        options = hospital_options(prepared, vehicle, incident)
+        if not options:
+            raise DispatchError(
+                f"No reachable hospital for incident {incident.id} with vehicle {vehicle.id}"
+            )
+        chosen[incident.id] = options[0].hospital.id
+    return chosen
+
+
+def _patient_cluster_cost(
+    prepared: PreparedProblem,
+    vehicle: Vehicle,
+    order: tuple[Incident, ...],
+    hospital_by_id: dict[str, str],
+) -> tuple[float, list[Leg]]:
+    """Cost of vehicle -> incident -> that patient's hospital -> next incident."""
+    legs: list[Leg] = []
+    total = 0.0
+    current = vehicle.id
+    for position, incident in enumerate(order, start=1):
+        leg = route_leg(prepared, vehicle, current, incident.id)
+        legs.append(leg)
+        total += leg.travel_time_s
+        total += URGENCY_STEP_SECONDS * incident.severity * position
+        current = incident.id
+        hospital_leg = route_leg(prepared, vehicle, current, hospital_by_id[incident.id])
+        legs.append(hospital_leg)
+        total += hospital_leg.travel_time_s
+        current = hospital_by_id[incident.id]
+    return total, legs
+
+
+def order_patient_cluster(
+    prepared: PreparedProblem,
+    vehicle: Vehicle,
+    incidents: list[Incident],
+    hospital_by_id: dict[str, str] | None = None,
+) -> tuple[list[Incident], list[Leg], float, dict[str, str]]:
+    """Order incidents while dropping each patient at their own hospital."""
+    if not incidents:
+        raise DispatchError("Cluster has no incidents")
+    if len(incidents) > 6:
+        raise DispatchError("Cluster ordering is capped at 6 stops")
+    if hospital_by_id is None:
+        hospital_by_id = choose_patient_hospitals(prepared, vehicle, incidents)
+
+    remaining = list(incidents)
+    order: list[Incident] = []
+    current = vehicle.id
+    while remaining:
+        nearest = min(
+            remaining,
+            key=lambda inc: route_leg(prepared, vehicle, current, inc.id).travel_time_s,
+        )
+        order.append(nearest)
+        remaining.remove(nearest)
+        current = hospital_by_id[nearest.id]
+
+    best_order = tuple(order)
+    best_cost, best_legs = _patient_cluster_cost(
+        prepared, vehicle, best_order, hospital_by_id
+    )
+    for candidate in permutations(incidents):
+        cost, legs = _patient_cluster_cost(
+            prepared, vehicle, candidate, hospital_by_id
+        )
+        if cost < best_cost:
+            best_cost, best_legs, best_order = cost, legs, candidate
+    return list(best_order), best_legs, best_cost, hospital_by_id
+
+
 def plan_for_order(
     prepared: PreparedProblem,
     vehicle: Vehicle,
@@ -324,41 +428,62 @@ def plan_for_order(
     hospital: Hospital,
     order_ids: list[str],
     mode: str = "classical",
+    patient_hospitals: dict[str, str] | None = None,
 ) -> RoutePlan:
-    """Evaluate a specific stop order (used by the QAOA comparison)."""
+    """Evaluate a specific stop order (used by the QAOA comparison).
+
+    When ``patient_hospitals`` is supplied, the route drops each patient at
+    their own hospital: vehicle -> incident -> hospital -> next incident.
+    Otherwise every patient uses ``hospital`` (the legacy behaviour).
+    """
     by_id = {incident.id: incident for incident in incidents}
     if set(order_ids) != set(by_id):
         raise DispatchError("order_ids must be a permutation of the incident set")
 
+    hospital_by_id = patient_hospitals or {
+        incident.id: hospital.id for incident in incidents
+    }
     legs: list[Leg] = []
     current = vehicle.id
     objective = 0.0
+    total_offload = 0.0
     for position, incident_id in enumerate(order_ids, start=1):
         leg = route_leg(prepared, vehicle, current, incident_id)
         legs.append(leg)
         objective += leg.travel_time_s
         objective += URGENCY_STEP_SECONDS * by_id[incident_id].severity * position
         current = incident_id
-    final = route_leg(prepared, vehicle, current, hospital.id)
-    legs.append(final)
-    objective += final.travel_time_s
-    objective += hospital.offload_min * 60.0
+        hospital_id = hospital_by_id[incident_id]
+        hospital_leg = route_leg(prepared, vehicle, current, hospital_id)
+        legs.append(hospital_leg)
+        objective += hospital_leg.travel_time_s
+        total_offload += prepared.scenario.hospital(hospital_id).offload_min
+        current = hospital_id
+    objective += total_offload * 60.0
 
     transit_s = sum(leg.travel_time_s for leg in legs)
-    required = {i.specialty_required for i in incidents if i.specialty_required}
+    specialty_match = all(
+        incident.specialty_required is None
+        or incident.specialty_required
+        in prepared.scenario.hospital(hospital_by_id[incident.id]).specialties
+        for incident in incidents
+    )
     return RoutePlan(
         vehicle_id=vehicle.id,
         incident_ids=list(order_ids),
-        hospital_id=hospital.id,
+        hospital_id=hospital_by_id[order_ids[0]],
         legs=legs,
         total_transit_s=transit_s,
-        offload_min=hospital.offload_min,
-        total_mission_min=transit_s / 60.0 + hospital.offload_min,
+        offload_min=total_offload,
+        total_mission_min=transit_s / 60.0 + total_offload,
         equipment_match=all(vehicle.can_carry(i.equipment_required) for i in incidents),
         clearance_ok=True,
-        specialty_match=required.issubset(set(hospital.specialties)),
+        specialty_match=specialty_match,
         mode=mode,
         objective_score_s=objective,
+        patient_hospitals=hospital_by_id,
+        pruned_edges=prepared.routing.number_of_edges()
+        - prepared.pruned[vehicle.id].number_of_edges(),
     )
 
 
@@ -390,7 +515,7 @@ def best_hospital_for_cluster(
 def cluster_plan(
     prepared: PreparedProblem, vehicle: Vehicle, incident_ids: list[str]
 ) -> RoutePlan:
-    """Plan one vehicle visiting several incidents, then the best hospital."""
+    """Plan one vehicle visiting several incidents, each with its own hospital."""
     incidents = [i for i in prepared.scenario.incidents if i.id in set(incident_ids)]
     if len(incidents) != len(incident_ids):
         raise DispatchError("Some incident ids are not in the scenario")
@@ -401,43 +526,44 @@ def cluster_plan(
     if any(not vehicle.can_carry(i.equipment_required) for i in incidents):
         raise DispatchError(f"{vehicle.id} lacks equipment for one or more incidents")
 
-    required = {i.specialty_required for i in incidents if i.specialty_required}
-    candidates = [
-        h for h in prepared.scenario.hospitals if required.issubset(set(h.specialties))
-    ]
-    specialty_match = True
+    order, legs, objective, hospital_by_id = order_patient_cluster(
+        prepared, vehicle, incidents
+    )
+    specialty_match = all(
+        incident.specialty_required is None
+        or incident.specialty_required
+        in prepared.scenario.hospital(hospital_by_id[incident.id]).specialties
+        for incident in incidents
+    )
     notes: list[str] = []
-    if not candidates:
-        candidates = list(prepared.scenario.hospitals)
-        specialty_match = False
-        notes.append("No single hospital covers every required specialty; falling back.")
+    if not specialty_match:
+        notes.append(
+            "At least one patient has no hospital with the required specialty; "
+            "using the best available hospital."
+        )
 
-    best: tuple[float, list[Incident], list[Leg], Hospital] | None = None
-    for hospital in candidates:
-        order, legs, transit = order_cluster(prepared, vehicle, incidents, hospital)
-        total = transit + hospital.offload_min * 60.0
-        if best is None or total < best[0]:
-            best = (total, order, legs, hospital)
-
-    if best is None:
-        raise DispatchError("No reachable hospital for the cluster")
-
-    total, order, legs, hospital = best
     transit_s = sum(leg.travel_time_s for leg in legs)
+    total_offload = sum(
+        prepared.scenario.hospital(hospital_by_id[incident.id]).offload_min
+        for incident in incidents
+    )
     return RoutePlan(
         vehicle_id=vehicle.id,
         incident_ids=[i.id for i in order],
-        hospital_id=hospital.id,
+        hospital_id=hospital_by_id[order[0].id],
         legs=legs,
         total_transit_s=transit_s,
-        offload_min=hospital.offload_min,
-        total_mission_min=transit_s / 60.0 + hospital.offload_min,
+        offload_min=total_offload,
+        total_mission_min=transit_s / 60.0 + total_offload,
         equipment_match=True,
         clearance_ok=True,
         specialty_match=specialty_match,
         mode="classical",
-        objective_score_s=total,
+        objective_score_s=objective + total_offload * 60.0,
         notes=notes,
+        patient_hospitals=hospital_by_id,
+        pruned_edges=prepared.routing.number_of_edges()
+        - prepared.pruned[vehicle.id].number_of_edges(),
     )
 
 
@@ -446,13 +572,15 @@ def run_scenario(
     graph: nx.MultiDiGraph,
     cfg: Config,
     cluster_vehicle: str | None = None,
+    traffic: TrafficModel | None = None,
+    when: datetime | None = None,
 ) -> DispatchResult:
     """Prepare and dispatch one scenario (used by the CLI and tests).
 
     With ``cluster_vehicle`` set, all incidents are ordered for that single
     vehicle; otherwise the greedy multi-vehicle assignment is used.
     """
-    prepared = prepare(scenario, graph, cfg)
+    prepared = prepare(scenario, graph, cfg, traffic=traffic, when=when)
     if cluster_vehicle is None:
         return assign(prepared)
     vehicle = scenario.vehicle(cluster_vehicle)

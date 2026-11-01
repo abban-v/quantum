@@ -27,5 +27,8 @@ def test_cluster_plan_orders_all_incidents(grid_graph, scenario, config):
     als = scenario.vehicle("ALS-1")
     plan = cluster_plan(prepared, als, [i.id for i in scenario.incidents])
     assert set(plan.incident_ids) == {i.id for i in scenario.incidents}
-    assert len(plan.legs) == len(scenario.incidents) + 1
+    # vehicle -> incident -> hospital, once per patient
+    assert len(plan.legs) == 2 * len(scenario.incidents)
+    assert set(plan.patient_hospitals) == {i.id for i in scenario.incidents}
     assert plan.total_mission_min > 0
+    assert plan.offload_min > 0

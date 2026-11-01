@@ -22,6 +22,7 @@ from quantum.dispatch import (
     PreparedProblem,
     RoutePlan,
     order_cluster,
+    order_patient_cluster,
     plan_for_order,
 )
 from quantum.problem import Hospital, Incident, Vehicle
@@ -104,7 +105,24 @@ def _classical_plan(
     vehicle: Vehicle,
     incidents: list[Incident],
     hospital: Hospital,
+    patient_hospitals: dict[str, str] | None = None,
 ) -> tuple[RoutePlan, list[str]]:
+    if patient_hospitals:
+        order, _, _, hospital_by_id = order_patient_cluster(
+            prepared, vehicle, incidents, patient_hospitals
+        )
+        order_ids = [incident.id for incident in order]
+        return (
+            plan_for_order(
+                prepared,
+                vehicle,
+                incidents,
+                hospital,
+                order_ids,
+                patient_hospitals=hospital_by_id,
+            ),
+            order_ids,
+        )
     order, _, _ = order_cluster(prepared, vehicle, incidents, hospital)
     order_ids = [incident.id for incident in order]
     return plan_for_order(prepared, vehicle, incidents, hospital, order_ids), order_ids
@@ -123,12 +141,21 @@ def run_qaoa(
     cfg: Config,
     seed: int = 7,
     p: int = 1,
+    patient_hospitals: dict[str, str] | None = None,
 ) -> QAOAResult:
     start = time.monotonic()
-    classical_plan, classical_ids = _classical_plan(prepared, vehicle, incidents, hospital)
+    classical_plan, classical_ids = _classical_plan(
+        prepared, vehicle, incidents, hospital, patient_hospitals
+    )
 
     try:
-        problem = build_qubo(prepared, vehicle, incidents, hospital)
+        problem = build_qubo(
+            prepared,
+            vehicle,
+            incidents,
+            hospital,
+            patient_hospitals=patient_hospitals,
+        )
     except QuboError as exc:
         return _fallback(
             prepared, vehicle, incidents, hospital, classical_plan, classical_ids,
@@ -212,7 +239,13 @@ def run_qaoa(
 
     order_ids = [problem.incident_ids[i] for i in order]
     quantum_plan = plan_for_order(
-        prepared, vehicle, incidents, hospital, order_ids, mode="quantum"
+        prepared,
+        vehicle,
+        incidents,
+        hospital,
+        order_ids,
+        mode="quantum",
+        patient_hospitals=patient_hospitals,
     )
 
     notes: list[str] = []
