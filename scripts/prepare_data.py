@@ -12,12 +12,13 @@ Outputs:
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import json
+from datetime import datetime, timezone
 
 import pandas as pd
 
-from quantum.config import Config, ensure_dirs
-from quantum.data.fetch import fetch_graph
+from quantum.config import Config, MANIFEST_DIR, ensure_dirs
+from quantum.data.fetch import fetch_graph, sha256_file
 from quantum.data.loader import parse_height_m, parse_weight_kg, validate_graph
 
 
@@ -63,6 +64,22 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(out, index=False)
     print(f"wrote {len(frame)} edges to {out}")
+
+    manifest = {
+        "dataset": "manhattan_edges",
+        "derived_from": str(cfg.graph_cache),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "rows": int(len(frame)),
+        "columns": list(frame.columns),
+        "nodes": int(stats["nodes"]),
+        "dropped_disconnected_nodes": int(graph.graph.get("qevr_dropped_nodes", 0)),
+        "sha256": sha256_file(out),
+        "units": {"length_m": "metres", "speed_kph": "km/h", "travel_time_s": "seconds"},
+    }
+    MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
+    manifest_path = MANIFEST_DIR / "manhattan_edges.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"wrote manifest to {manifest_path}")
 
     tagged = frame["maxheight_m"].notna().sum()
     print(f"edges with parsed height: {tagged} (expected 0 for this extract)")

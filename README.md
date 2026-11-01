@@ -4,6 +4,74 @@
 >
 > **Featuring an Interactive Real-World Browser Map UI with Natural Language Incident Dispatch, powered by Local Quantum Simulation using Qiskit & Qiskit Aer.**
 
+> **Status:** working demo prototype. Road geometry and hospital/station locations are real OpenStreetMap data; traffic, offload waits, incident severities, vehicle capabilities, and clearance limits are **simulated**. See [Quick start](#quick-start--run-the-demo-basic) and [`data/curated/README.md`](data/curated/README.md).
+
+---
+
+## Quick start — run the demo (basic)
+
+This repository currently ships a **local Manhattan demo**. It needs no cloud account, API key, or quantum hardware.
+
+### What you need
+
+- Python 3.12 and [`uv`](https://docs.astral.sh/uv/)
+- Internet access **on the first run only**, to download the OpenStreetMap road graph (about 1 minute). After that the app runs from the local cache.
+
+### Run it
+
+```bash
+cd /path/to/quantum/quantum
+uv sync
+uv run streamlit run app.py
+```
+
+Open <http://localhost:8501>.
+
+Optional: pre-download the graph so the first page load is fast:
+
+```bash
+uv run python scripts/prepare_data.py
+```
+
+The graph is cached at `data/cache/manhattan_drive.graphml` (gitignored).
+
+### Basic demo flow (about 30 seconds)
+
+1. In the sidebar, choose preset **S4 — Multi-casualty collision**.
+2. Click **Dispatch**. The map draws the classical route and the plan table shows transit, offload, total, equipment, specialty, and clearance status.
+3. Click **Run quantum**. A green repaired-QAOA overlay appears with the approximation ratio, raw feasibility, repaired feasibility, and runtime.
+4. Use the layer control (top right) to toggle routes, hospitals, ambulances, and incidents.
+
+### Click-to-place a custom incident
+
+1. Click anywhere on the map. An orange marker is placed.
+2. Type a description, for example `snake bite with difficulty breathing`.
+3. Click **Dispatch**.
+4. For a quantum order, tick **Multi-casualty custom (3 patients)** before dispatching. QAOA needs at least two stops.
+
+### What the demo actually does
+
+- Downloads and caches the Manhattan drive graph from OpenStreetMap.
+- Parses the free-text description with rules. Ollama is optional; the demo works without it.
+- Chooses a hospital classically, assigns a vehicle, and computes road routes.
+- For 2–3 stops, builds a 4–9 qubit QUBO, runs QAOA `p=1` on local Qiskit Aer, repairs the bitstring to a valid stop order, and overlays the result.
+- Uses **simulated** offload waits, severities, and clearance limits. Hospital and station locations are real OSM features.
+
+### Useful commands
+
+```bash
+uv run pytest -q
+uv run python scripts/run_scenario.py --scenario S4
+uv run python scripts/run_scenario.py --scenario S4 --cluster ALS-01
+```
+
+### If something goes wrong
+
+- **Port already in use:** `uv run streamlit run app.py --server.port 8502`
+- **Graph download fails:** retry once; the public Overpass API is occasionally rate-limited.
+- **No “Run quantum” button:** the plan has only one stop. Use preset S4 or the multi-casualty option.
+- **Start over:** click **Reset to preset** in the sidebar.
+
 ---
 
 ## 1. Introduction & Problem Statement
@@ -320,24 +388,15 @@ quantum/
 
 ## 7. How to Run & Get Started
 
-### 1. Setup Environment
-```bash
-# Clone and enter the repository
-cd /path/to/quantum/quantum
+See **[Quick start — run the demo (basic)](#quick-start--run-the-demo-basic)** above.
 
-# Install dependencies using uv
+The short version:
+
+```bash
 uv sync
-```
-
-### 2. Launch the Interactive Real-World Web Dashboard
-```bash
-# Launch the interactive browser map application (100% local, zero cloud dependencies)
 uv run streamlit run app.py
 ```
-*(Click anywhere on the map, describe the emergency in plain text, and watch the optimal quantum-assisted routes execute live!)*
 
-### 3. Run the Jupyter Research & Benchmark Notebook
-```bash
-# Run the end-to-end mathematical and quantum benchmarking notebook
-uv run jupyter notebook notebooks/emergency_routing.ipynb
-```
+Then open <http://localhost:8501>, pick preset **S4**, click **Dispatch**, then **Run quantum**.
+
+The Jupyter benchmark notebook (`notebooks/emergency_routing.ipynb`) is **not implemented yet**; it is part of the backlog.

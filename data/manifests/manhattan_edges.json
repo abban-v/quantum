@@ -1,0 +1,28 @@
+{
+  "dataset": "manhattan_edges",
+  "derived_from": "/home/abban/repos/quantum/quantum/data/cache/manhattan_drive.graphml",
+  "created_at": "2026-11-01T07:27:51.540914+00:00",
+  "rows": 9759,
+  "columns": [
+    "u",
+    "v",
+    "key",
+    "length_m",
+    "speed_kph",
+    "travel_time_s",
+    "highway",
+    "bridge",
+    "tunnel",
+    "name",
+    "maxheight_m",
+    "maxweight_kg"
+  ],
+  "nodes": 4542,
+  "dropped_disconnected_nodes": 91,
+  "sha256": "17d755049c9614fb7898450f4d445ba3f5d6fcb5380df4be29bb1fa371c5be00",
+  "units": {
+    "length_m": "metres",
+    "speed_kph": "km/h",
+    "travel_time_s": "seconds"
+  }
+}

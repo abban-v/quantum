@@ -439,3 +439,22 @@ def cluster_plan(
         objective_score_s=total,
         notes=notes,
     )
+
+
+def run_scenario(
+    scenario: Scenario,
+    graph: nx.MultiDiGraph,
+    cfg: Config,
+    cluster_vehicle: str | None = None,
+) -> DispatchResult:
+    """Prepare and dispatch one scenario (used by the CLI and tests).
+
+    With ``cluster_vehicle`` set, all incidents are ordered for that single
+    vehicle; otherwise the greedy multi-vehicle assignment is used.
+    """
+    prepared = prepare(scenario, graph, cfg)
+    if cluster_vehicle is None:
+        return assign(prepared)
+    vehicle = scenario.vehicle(cluster_vehicle)
+    plan = cluster_plan(prepared, vehicle, [incident.id for incident in scenario.incidents])
+    return DispatchResult(plans=[plan])

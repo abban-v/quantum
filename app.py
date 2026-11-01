@@ -20,18 +20,14 @@ from quantum.data.loader import (
     load_scenarios,
     load_vehicles,
 )
-from quantum.dispatch import (
-    DispatchError,
-    PreparedProblem,
-    RoutePlan,
-    assign,
-    cluster_plan,
-    prepare,
-)
-from quantum.nlp_parser import TriageResult, parse_incident
-from quantum.problem import Incident, Scenario
+from quantum.dispatch import DispatchError, RoutePlan
+from quantum.nlp_parser import parse_incident
 from quantum.qaoa_solver import QAOAResult, run_qaoa
 from quantum.runtime import run_with_large_stack
+from quantum.scenarios import (
+    build_custom_scenario,
+    dispatch_scenario,
+)
 from quantum.visualize import (
     CLASSICAL_COLOR,
     QUANTUM_COLOR,
@@ -70,86 +66,6 @@ def init_state() -> None:
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
-
-
-def find_cluster_vehicle(scenario: Scenario, incidents: list[Incident]):
-    best = None
-    for vehicle in scenario.vehicles:
-        if vehicle.capacity < len(incidents):
-            continue
-        if any(not vehicle.can_carry(i.equipment_required) for i in incidents):
-            continue
-        if best is None or vehicle.capacity > best.capacity:
-            best = vehicle
-    return best
-
-
-def build_custom_scenario(
-    base: Scenario,
-    point: tuple[float, float],
-    triage: TriageResult,
-    multi: bool,
-) -> Scenario:
-    lat, lon = point
-    incidents = [
-        Incident(
-            id="CUSTOM-1",
-            lat=lat,
-            lon=lon,
-            description=st.session_state.text,
-            severity=triage.severity,
-            equipment_required=triage.equipment_required,
-            specialty_required=triage.specialty_required,
-            source="synthetic",
-            notes="Created from the dashboard text input.",
-        )
-    ]
-    if multi:
-        offsets = [(0.0007, 0.0004), (-0.0006, 0.0005)]
-        severities = [max(5.0, triage.severity * 0.4), 5.0]
-        for index, ((dlat, dlon), severity) in enumerate(zip(offsets, severities), start=2):
-            incidents.append(
-                Incident(
-                    id=f"CUSTOM-{index}",
-                    lat=lat + dlat,
-                    lon=lon + dlon,
-                    description=f"Additional casualty {index} near the primary incident.",
-                    severity=severity,
-                    equipment_required="none",
-                    specialty_required=None,
-                    source="synthetic",
-                    notes="Synthetic multi-casualty companion.",
-                )
-            )
-    return Scenario(
-        id="CUSTOM",
-        name="Custom incident",
-        incidents=incidents,
-        vehicles=list(base.vehicles),
-        hospitals=list(base.hospitals),
-        traffic_multiplier=base.traffic_multiplier,
-        seed=base.seed,
-        source="synthetic",
-        notes="Built at runtime from a map click and free text.",
-    )
-
-
-def dispatch_scenario(
-    scenario: Scenario, graph, cfg: Config
-) -> tuple[PreparedProblem, list[RoutePlan]]:
-    prepared = prepare(scenario, graph, cfg)
-    if len(scenario.incidents) >= 2:
-        vehicle = find_cluster_vehicle(scenario, scenario.incidents)
-        if vehicle is not None:
-            try:
-                plan = cluster_plan(prepared, vehicle, [i.id for i in scenario.incidents])
-                return prepared, [plan]
-            except DispatchError:
-                pass
-    result = assign(prepared)
-    if not result.plans:
-        raise DispatchError("No vehicle could be assigned to the incident(s).")
-    return prepared, result.plans
 
 
 def render_plan_table(plans: list[RoutePlan]) -> None:
@@ -338,7 +254,11 @@ def main() -> None:
                         raise DispatchError("Click the map to place the incident first.")
                     triage = parse_incident(st.session_state.text, use_llm=use_llm)
                     scenario = build_custom_scenario(
-                        selected, st.session_state.click, triage, multi
+                        selected,
+                        st.session_state.click,
+                        st.session_state.text,
+                        triage,
+                        multi,
                     )
                 else:
                     scenario = selected.model_copy(deep=True)

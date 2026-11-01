@@ -180,6 +180,26 @@ def validate_graph(graph: nx.MultiDiGraph) -> dict[str, int]:
     return {"nodes": graph.number_of_nodes(), "edges": graph.number_of_edges()}
 
 
+def largest_strongly_connected_component(graph: nx.MultiDiGraph) -> nx.MultiDiGraph:
+    """Return the largest SCC so every snapped point can reach every other.
+
+    OSM extracts contain small disconnected stubs (parking aisles, service
+    roads). Keeping them would let a target snap to an unreachable node and
+    produce a spurious "no route" error, so they are removed here.
+    """
+    if graph.number_of_nodes() == 0:
+        raise DataValidationError("Cannot prune an empty graph")
+    largest = max(nx.strongly_connected_components(graph), key=len)
+    if len(largest) == graph.number_of_nodes():
+        return graph
+    pruned = graph.subgraph(largest).copy()
+    pruned.graph.update(graph.graph)
+    pruned.graph["qevr_dropped_nodes"] = graph.number_of_nodes() - len(largest)
+    if pruned.number_of_edges() == 0:
+        raise DataValidationError("Largest SCC has no edges")
+    return pruned
+
+
 def snap_targets_to_graph(
     graph: nx.MultiDiGraph,
     points: Iterable[tuple[str, float, float]],
