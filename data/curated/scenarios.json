@@ -1,0 +1,110 @@
+{
+  "scenarios": [
+    {
+      "id": "S1",
+      "name": "Respiratory arrest after apartment fire",
+      "incidents": [
+        {
+          "id": "S1-I1",
+          "lat": 40.7580,
+          "lon": -73.9855,
+          "description": "Apartment building fire victim, severe smoke inhalation with acute respiratory distress, cyanotic.",
+          "severity": 50.0,
+          "equipment_required": "ventilator",
+          "specialty_required": "burn",
+          "source": "synthetic",
+          "notes": "Demo incident near Times Square."
+        }
+      ],
+      "traffic_multiplier": 1.25,
+      "seed": 11,
+      "source": "synthetic",
+      "notes": "Scenario preset used by the demo and the parser tests."
+    },
+    {
+      "id": "S2",
+      "name": "Snake bite with airway compromise",
+      "incidents": [
+        {
+          "id": "S2-I1",
+          "lat": 40.7812,
+          "lon": -73.9665,
+          "description": "Hiker bitten by venomous viper on nature trail, swelling rapidly, difficulty breathing.",
+          "severity": 50.0,
+          "equipment_required": "ventilator",
+          "specialty_required": null,
+          "source": "synthetic",
+          "notes": "Demo incident in Central Park."
+        }
+      ],
+      "traffic_multiplier": 1.25,
+      "seed": 12,
+      "source": "synthetic",
+      "notes": "Scenario preset used by the demo and the parser tests."
+    },
+    {
+      "id": "S3",
+      "name": "Low-acuity fever",
+      "incidents": [
+        {
+          "id": "S3-I1",
+          "lat": 40.7750,
+          "lon": -73.9550,
+          "description": "Elderly patient with low-grade fever and mild dehydration.",
+          "severity": 1.0,
+          "equipment_required": "none",
+          "specialty_required": null,
+          "source": "synthetic",
+          "notes": "Demo incident on the Upper East Side."
+        }
+      ],
+      "traffic_multiplier": 1.25,
+      "seed": 13,
+      "source": "synthetic",
+      "notes": "Scenario preset used by the demo and the parser tests."
+    },
+    {
+      "id": "S4",
+      "name": "Multi-casualty collision (quantum ordering demo)",
+      "incidents": [
+        {
+          "id": "S4-I1",
+          "lat": 40.7580,
+          "lon": -73.9855,
+          "description": "Severe motor vehicle collision with massive trauma, multi-system injury.",
+          "severity": 50.0,
+          "equipment_required": "none",
+          "specialty_required": "trauma",
+          "source": "synthetic",
+          "notes": "Primary casualty."
+        },
+        {
+          "id": "S4-I2",
+          "lat": 40.7588,
+          "lon": -73.9842,
+          "description": "Passenger with chest pain and difficulty breathing.",
+          "severity": 20.0,
+          "equipment_required": "ventilator",
+          "specialty_required": "cardiac",
+          "source": "synthetic",
+          "notes": "Secondary casualty."
+        },
+        {
+          "id": "S4-I3",
+          "lat": 40.7572,
+          "lon": -73.9868,
+          "description": "Bystander with minor lacerations, walking wounded.",
+          "severity": 5.0,
+          "equipment_required": "none",
+          "specialty_required": null,
+          "source": "synthetic",
+          "notes": "Tertiary casualty."
+        }
+      ],
+      "traffic_multiplier": 1.25,
+      "seed": 14,
+      "source": "synthetic",
+      "notes": "Three incidents close together so a single ALS unit can be ordered by QAOA (9 qubits)."
+    }
+  ]
+}

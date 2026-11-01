@@ -1,0 +1,92 @@
+{
+  "hospitals": [
+    {
+      "id": "bellevue",
+      "name": "NYC Health + Hospitals / Bellevue",
+      "lat": 40.738967,
+      "lon": -73.975141,
+      "specialties": ["trauma", "stroke", "cardiac"],
+      "offload_min": 45.0,
+      "trauma_level": 1,
+      "source": "curated",
+      "notes": "Real location. Specialty list and offload time are demo placeholders pending verification."
+    },
+    {
+      "id": "tisch",
+      "name": "NYU Langone Tisch Hospital",
+      "lat": 40.742024,
+      "lon": -73.973589,
+      "specialties": ["trauma", "stroke", "cardiac", "pediatric"],
+      "offload_min": 30.0,
+      "trauma_level": 1,
+      "source": "curated",
+      "notes": "Real location. Specialty list and offload time are demo placeholders pending verification."
+    },
+    {
+      "id": "mount_sinai",
+      "name": "The Mount Sinai Hospital",
+      "lat": 40.789586,
+      "lon": -73.952921,
+      "specialties": ["trauma", "stroke", "cardiac", "pediatric"],
+      "offload_min": 60.0,
+      "trauma_level": 1,
+      "source": "curated",
+      "notes": "Real location. Specialty list and offload time are demo placeholders pending verification."
+    },
+    {
+      "id": "weill_cornell",
+      "name": "NewYork-Presbyterian / Weill Cornell Medical Center",
+      "lat": 40.764687,
+      "lon": -73.953909,
+      "specialties": ["burn", "stroke", "cardiac"],
+      "offload_min": 35.0,
+      "trauma_level": null,
+      "source": "curated",
+      "notes": "Real location. Specialty list and offload time are demo placeholders pending verification."
+    },
+    {
+      "id": "lenox_hill",
+      "name": "Lenox Hill Hospital",
+      "lat": 40.773642,
+      "lon": -73.960857,
+      "specialties": ["stroke", "cardiac"],
+      "offload_min": 25.0,
+      "trauma_level": null,
+      "source": "curated",
+      "notes": "Real location. Specialty list and offload time are demo placeholders pending verification."
+    },
+    {
+      "id": "metropolitan",
+      "name": "NYC Health + Hospitals / Metropolitan",
+      "lat": 40.785059,
+      "lon": -73.944953,
+      "specialties": ["stroke"],
+      "offload_min": 40.0,
+      "trauma_level": null,
+      "source": "curated",
+      "notes": "Real location. Specialty list and offload time are demo placeholders pending verification."
+    },
+    {
+      "id": "mount_sinai_west",
+      "name": "Mount Sinai West",
+      "lat": 40.769731,
+      "lon": -73.986958,
+      "specialties": ["stroke", "cardiac"],
+      "offload_min": 20.0,
+      "trauma_level": null,
+      "source": "curated",
+      "notes": "Real location. Specialty list and offload time are demo placeholders pending verification."
+    },
+    {
+      "id": "columbia",
+      "name": "Columbia University Irving Medical Center",
+      "lat": 40.841169,
+      "lon": -73.942428,
+      "specialties": ["trauma", "stroke", "cardiac", "pediatric"],
+      "offload_min": 55.0,
+      "trauma_level": 1,
+      "source": "curated",
+      "notes": "Real location. Specialty list and offload time are demo placeholders pending verification."
+    }
+  ]
+}

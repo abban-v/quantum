@@ -1,0 +1,11 @@
+{
+  "dataset": "osm_road_graph",
+  "place": "Manhattan, New York, USA",
+  "network_type": "drive",
+  "fetched_at": "2026-11-01T06:52:38.785898+00:00",
+  "nodes": 4633,
+  "edges": 9910,
+  "sha256": "db5499c05eedc598fd22ece28750dbff228adf1fdbee522594afc2a90bdf2222",
+  "license": "ODbL 1.0 (OpenStreetMap contributors)",
+  "path": "data/cache/manhattan_drive.graphml"
+}

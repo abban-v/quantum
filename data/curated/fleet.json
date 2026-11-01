@@ -1,0 +1,108 @@
+{
+  "vehicles": [
+    {
+      "id": "ALS-01",
+      "kind": "ALS",
+      "station_id": "engine_8",
+      "lat": 40.756825,
+      "lon": -73.970936,
+      "capacity": 3,
+      "ventilator": true,
+      "height_m": 3.4,
+      "weight_kg": 5200.0,
+      "source": "synthetic",
+      "notes": "Vehicle is synthetic. Station coordinates are a real FDNY firehouse location."
+    },
+    {
+      "id": "ALS-02",
+      "kind": "ALS",
+      "station_id": "engine_40",
+      "lat": 40.774599,
+      "lon": -73.984313,
+      "capacity": 2,
+      "ventilator": true,
+      "height_m": 3.4,
+      "weight_kg": 5200.0,
+      "source": "synthetic",
+      "notes": "Vehicle is synthetic. Station coordinates are a real FDNY firehouse location."
+    },
+    {
+      "id": "ALS-03",
+      "kind": "ALS",
+      "station_id": "engine_91",
+      "lat": 40.793840,
+      "lon": -73.940744,
+      "capacity": 2,
+      "ventilator": true,
+      "height_m": 3.4,
+      "weight_kg": 5200.0,
+      "source": "synthetic",
+      "notes": "Vehicle is synthetic. Station coordinates are a real FDNY firehouse location."
+    },
+    {
+      "id": "ALS-04",
+      "kind": "ALS",
+      "station_id": "engine_4",
+      "lat": 40.703623,
+      "lon": -74.007541,
+      "capacity": 2,
+      "ventilator": true,
+      "height_m": 3.4,
+      "weight_kg": 5200.0,
+      "source": "synthetic",
+      "notes": "Vehicle is synthetic. Station coordinates are a real FDNY firehouse location."
+    },
+    {
+      "id": "BLS-01",
+      "kind": "BLS",
+      "station_id": "engine_8",
+      "lat": 40.756825,
+      "lon": -73.970936,
+      "capacity": 1,
+      "ventilator": false,
+      "height_m": 3.0,
+      "weight_kg": 4200.0,
+      "source": "synthetic",
+      "notes": "Vehicle is synthetic. Station coordinates are a real FDNY firehouse location."
+    },
+    {
+      "id": "BLS-02",
+      "kind": "BLS",
+      "station_id": "engine_40",
+      "lat": 40.774599,
+      "lon": -73.984313,
+      "capacity": 1,
+      "ventilator": false,
+      "height_m": 3.0,
+      "weight_kg": 4200.0,
+      "source": "synthetic",
+      "notes": "Vehicle is synthetic. Station coordinates are a real FDNY firehouse location."
+    },
+    {
+      "id": "BLS-03",
+      "kind": "BLS",
+      "station_id": "engine_91",
+      "lat": 40.793840,
+      "lon": -73.940744,
+      "capacity": 1,
+      "ventilator": false,
+      "height_m": 3.0,
+      "weight_kg": 4200.0,
+      "source": "synthetic",
+      "notes": "Vehicle is synthetic. Station coordinates are a real FDNY firehouse location."
+    },
+    {
+      "id": "BLS-04",
+      "kind": "BLS",
+      "station_id": "engine_53",
+      "lat": 40.788894,
+      "lon": -73.946885,
+      "capacity": 1,
+      "ventilator": false,
+      "height_m": 3.0,
+      "weight_kg": 4200.0,
+      "source": "synthetic",
+      "notes": "Vehicle is synthetic. Station coordinates are a real FDNY firehouse location."
+    }
+  ]
+}

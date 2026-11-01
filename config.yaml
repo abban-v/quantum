@@ -1,0 +1,11 @@
+place: "Manhattan, New York, USA"
+network_type: "drive"
+graph_cache: "data/cache/manhattan_drive.graphml"
+edges_cache: "data/curated/manhattan_edges.parquet"
+traffic_multiplier: 1.25
+max_qubits: 12
+max_quantum_stops: 3
+qaoa_timeout_s: 20
+qaoa_maxiter: 60
+qaoa_shots: 1024
+default_speed_kph: 30.0
